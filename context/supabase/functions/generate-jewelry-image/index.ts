@@ -941,219 +941,64 @@ ${
 
     if (mode === 'budget-aware') {
       if (!selectedBaseImage) {
-        return new Response(
-          JSON.stringify({ error: 'Missing selectedBaseImage for budget-aware mode' }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
-        );
+        return new Response(JSON.stringify({ error: 'Missing selectedBaseImage for budget-aware mode' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (!designData?.budget || !String(designData.budget).trim()) {
+        return new Response(JSON.stringify({ error: 'Missing designData.budget for budget-aware mode' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
 
-      const plan = buildBudgetAwarePlan(designData || {});
-      const budgetAwarePrompt = buildBudgetAwarePrompt(designData || {}, plan);
+      const budgetPlan = buildBudgetOptimizationPlan(designData || {});
+      const budgetAwarePrompt = buildBudgetAwarePrompt(designData || {}, budgetPlan);
+      const budgetAwareReport = buildBudgetAwareReport(designData || {}, budgetPlan);
+      const budgetImages = hasInspiration ? [selectedBaseImage, ...inspirationSources] : [selectedBaseImage];
 
-      const budgetAwareResult = await callImageEdit({
-        openaiApiKey,
-        images: [selectedBaseImage],
-        prompt: `${baseContext}
+      let budgetB64 = null;
 
-${plan.promptBlock}
+      try {
+        const budgetResult = await callImageEdit({
+          openaiApiKey,
+          images: budgetImages,
+          prompt: `${baseContext}
 
 ${budgetAwarePrompt}`,
-        size: '1024x1024',
-        quality: 'high',
-        inputFidelity: 'high',
+          size: '1024x1024',
+          quality: 'high',
+          inputFidelity: 'high',
+        });
+        budgetB64 = extractBase64Image(budgetResult);
+      } catch (editError) {
+        console.log('Budget-aware edit fallback triggered:', editError);
+      }
+
+      if (!budgetB64) {
+        const fallbackResult = await callImageGeneration({
+          openaiApiKey,
+          prompt: `${baseContext}
+
+${budgetAwarePrompt}
+
+Create a fresh budget-aware product render that still looks recognizably like the selected design.`,
+          size: '1024x1024',
+          quality: 'high',
+        });
+        budgetB64 = extractBase64Image(fallbackResult);
+      }
+
+      if (!budgetB64) throw new Error('No budget-aware image returned');
+
+      return new Response(JSON.stringify({
+        budgetAwareImage: `data:image/png;base64,${budgetB64}`,
+        budgetAwareReport,
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
-
-      const budgetAwareB64 = extractBase64Image(budgetAwareResult);
-
-      if (!budgetAwareB64) {
-        return new Response(
-          JSON.stringify({ error: 'No budget-aware image returned' }),
-          {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
-        );
-      }
-
-      return new Response(
-        JSON.stringify({
-          budgetAwareImage: `data:image/png;base64,${budgetAwareB64}`,
-          budgetAwareReport: {
-            title: 'Budget-fit modification summary',
-            targetBudget: plan.targetBudget,
-            protectedDesign: plan.protectedDesign,
-            changeSummary: plan.changeSummary,
-            changes: plan.changes,
-          },
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
-    }
-
-    if (mode === 'lifestyle') {
-      if (!selectedBaseImage) {
-        return new Response(
-          JSON.stringify({ error: 'Missing selectedBaseImage for lifestyle mode' }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
-        );
-      }
-
-      const lifestylePrompt = buildLifestylePrompt(designData || {}, inspirationAnalysis || '');
-
-      const lifestyleResult = await callImageEdit({
-        openaiApiKey,
-        images: [selectedBaseImage],
-        prompt: `${baseContext}\n\n${lifestylePrompt}`,
-        size: '1024x1536',
-        quality: 'high',
-        inputFidelity: 'high',
-      });
-
-      const lifestyleB64 = extractBase64Image(lifestyleResult);
-
-      if (!lifestyleB64) {
-        return new Response(
-          JSON.stringify({ error: 'No lifestyle image returned' }),
-          {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
-        );
-      }
-
-      return new Response(
-        JSON.stringify({
-          lifestyleImage: `data:image/png;base64,${lifestyleB64}`,
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
-    }
-
-    if (mode === 'personal-preview') {
-      if (!selectedBaseImage) {
-        return new Response(
-          JSON.stringify({ error: 'Missing selectedBaseImage for personal-preview mode' }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
-        );
-      }
-
-      if (!facePhotoDataUrl) {
-        return new Response(
-          JSON.stringify({ error: 'Missing facePhotoDataUrl for personal-preview mode' }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
-        );
-      }
-
-      const personalPrompt = buildPersonalPreviewPrompt(
-        designData || {},
-        inspirationAnalysis || ''
-      );
-
-      const personalPreviewResult = await callImageEdit({
-        openaiApiKey,
-        images: [selectedBaseImage, facePhotoDataUrl],
-        prompt: `${baseContext}\n\n${personalPrompt}`,
-        size: '1024x1536',
-        quality: 'high',
-        inputFidelity: 'high',
-      });
-
-      const personalPreviewB64 = extractBase64Image(personalPreviewResult);
-
-      if (!personalPreviewB64) {
-        return new Response(
-          JSON.stringify({ error: 'No personal preview image returned' }),
-          {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
-        );
-      }
-
-      return new Response(
-        JSON.stringify({
-          personalPreviewImage: `data:image/png;base64,${personalPreviewB64}`,
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
-    }
-
-    if (mode === 'regenerate-selected') {
-      if (!selectedBaseImage) {
-        return new Response(
-          JSON.stringify({ error: 'Missing selectedBaseImage for regenerate-selected mode' }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
-        );
-      }
-
-      const regeneratePrompt = buildRegenerationPrompt(
-        designData || {},
-        editInstruction || ''
-      );
-
-      const regeneratedResult = hasInspiration
-        ? await callImageEdit({
-            openaiApiKey,
-            images: [selectedBaseImage, ...inspirationSources],
-            prompt: `${baseContext}\n\n${regeneratePrompt}`,
-            size: '1024x1024',
-            quality: 'medium',
-            inputFidelity: 'high',
-          })
-        : await callImageEdit({
-            openaiApiKey,
-            images: [selectedBaseImage],
-            prompt: `${baseContext}\n\n${regeneratePrompt}`,
-            size: '1024x1024',
-            quality: 'medium',
-            inputFidelity: 'high',
-          });
-
-      const regeneratedB64 = extractBase64Image(regeneratedResult);
-
-      if (!regeneratedB64) {
-        return new Response(
-          JSON.stringify({ error: 'No regenerated image returned' }),
-          {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
-        );
-      }
-
-      return new Response(
-        JSON.stringify({
-          regeneratedImage: `data:image/png;base64,${regeneratedB64}`,
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
     }
 
     if (mode === 'product-single') {

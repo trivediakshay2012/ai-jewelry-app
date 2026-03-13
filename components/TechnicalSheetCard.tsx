@@ -44,14 +44,16 @@ type Props = {
 type NormalizedType = 'ring' | 'necklace' | 'chain' | 'pendant' | 'bracelet' | 'bangle' | 'earrings' | 'other';
 
 function normalizeType(value?: string): NormalizedType {
-  const v = (value || '').trim().toLowerCase();
-  if (v.includes('ring')) return 'ring';
-  if (v.includes('necklace') || v.includes('mangalsutra')) return 'necklace';
-  if (v.includes('chain')) return 'chain';
-  if (v.includes('pendant')) return 'pendant';
-  if (v.includes('bracelet')) return 'bracelet';
-  if (v.includes('bangle') || v.includes('kada')) return 'bangle';
-  if (v.includes('earring') || v.includes('stud') || v.includes('hoop')) return 'earrings';
+  const raw = (value || '').trim().toLowerCase();
+  const v = raw.replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!v) return 'other';
+  if (/\bearrings?\b/.test(v) || /\bstuds?\b/.test(v) || /\bhoops?\b/.test(v)) return 'earrings';
+  if (/\bpendants?\b/.test(v) || /\blockets?\b/.test(v)) return 'pendant';
+  if (/\bnecklaces?\b/.test(v) || /\bmangalsutra\b/.test(v)) return 'necklace';
+  if (/\bchains?\b/.test(v)) return 'chain';
+  if (/\bbracelets?\b/.test(v) || /\bcuffs?\b/.test(v)) return 'bracelet';
+  if (/\bbangles?\b/.test(v) || /\bkada\b/.test(v)) return 'bangle';
+  if (/\brings?\b/.test(v) || /\bband\b/.test(v)) return 'ring';
   return 'other';
 }
 

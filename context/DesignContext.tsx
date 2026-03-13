@@ -175,6 +175,10 @@ export function DesignProvider({ children }: { children: React.ReactNode }) {
       styleMood: item.styleMood,
       referenceInspiration: `${item.vendorName} inventory piece: ${item.title}`,
       finalCustomNote: `${item.description} Use this vendor stock piece as the core inspiration and evolve it only when necessary.`,
+      backgroundStyle: '',
+      outfitType: '',
+      outfitColor: '',
+      wantsModelPreview: '',
       ...(item.specs as Partial<DesignData>),
     };
 

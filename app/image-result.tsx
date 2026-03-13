@@ -5,7 +5,7 @@ import {
 } from '@supabase/supabase-js';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -52,6 +52,16 @@ type PricingEstimate = {
   disclaimer: string;
 };
 
+
+const USA_STATES = [
+  'Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut','Delaware','Florida','Georgia',
+  'Hawaii','Idaho','Illinois','Indiana','Iowa','Kansas','Kentucky','Louisiana','Maine','Maryland','Massachusetts',
+  'Michigan','Minnesota','Mississippi','Missouri','Montana','Nebraska','Nevada','New Hampshire','New Jersey',
+  'New Mexico','New York','North Carolina','North Dakota','Ohio','Oklahoma','Oregon','Pennsylvania','Rhode Island',
+  'South Carolina','South Dakota','Tennessee','Texas','Utah','Vermont','Virginia','Washington','West Virginia',
+  'Wisconsin','Wyoming','District of Columbia'
+];
+
 type BudgetAwareReport = {
   title: string;
   targetBudget: string;
@@ -74,6 +84,7 @@ export default function ImageResultScreen() {
     setInspirationAnalysis,
     facePhotoUri,
     setFacePhotoUri,
+    setDesignData,
   } = useDesign();
 
   const [productImages, setProductImages] = useState<GeneratedImage[]>([]);
@@ -98,10 +109,15 @@ export default function ImageResultScreen() {
 
   const [editInstruction, setEditInstruction] = useState('');
   const [editablePrompt, setEditablePrompt] = useState('');
+  const [stateInput, setStateInput] = useState(((designData as unknown as Record<string, string | undefined>)?.stateOrProvince) || '');
 
   useEffect(() => {
     setEditablePrompt(generatedPrompt || '');
   }, [generatedPrompt]);
+
+  useEffect(() => {
+    setStateInput(((designData as unknown as Record<string, string | undefined>)?.stateOrProvince) || '');
+  }, [((designData as unknown as Record<string, string | undefined>)?.stateOrProvince)]);
 
   const isBusy =
     loading ||
@@ -119,6 +135,10 @@ export default function ImageResultScreen() {
   const selectedBudgetAwareReport = budgetAwareReports[selectedIndex] || null;
 
   const hasBudget = Boolean(String(designData?.budget || '').trim());
+  const isUSAMarket = useMemo(() => {
+    const normalizedCountry = String(designData?.country || '').trim().toLowerCase();
+    return normalizedCountry.includes('usa') || normalizedCountry.includes('united states') || normalizedCountry === 'us';
+  }, [designData?.country]);
 
   const handleFunctionError = async (error: unknown) => {
     if (error instanceof FunctionsHttpError) {
@@ -216,13 +236,14 @@ export default function ImageResultScreen() {
     });
   };
 
-  const handleGenerateTechnicalSheet = async () => {
+  const handleGenerateTechnicalSheet = async (overrideDesignData?: any) => {
     try {
       setTechnicalLoading(true);
+      const payloadDesignData = overrideDesignData || designData;
 
       const { data, error } = await supabase.functions.invoke('generate-jewelry-image', {
         body: {
-          designData,
+          designData: payloadDesignData,
           mode: 'technical-sheet',
         },
       });
@@ -541,6 +562,8 @@ export default function ImageResultScreen() {
           uploadedInspirationUrls,
           editInstruction,
           selectedBaseImage: selectedImage.dataUrl,
+          selectedOptionLabel: selectedImage.label || `Option ${selectedIndex + 1}`,
+          selectedTechnicalSheet: technicalSheet,
           facePhotoDataUrl,
           mode: 'personal-preview',
           optionIndex: selectedIndex,
@@ -575,6 +598,19 @@ export default function ImageResultScreen() {
     } finally {
       setPersonalPreviewLoading(false);
     }
+  };
+
+
+  const handleUpdateStateEstimate = async () => {
+    const trimmedState = stateInput.trim();
+    setDesignData((prev) => ({
+      ...prev,
+      stateOrProvince: trimmedState,
+    }));
+    await handleGenerateTechnicalSheet({
+      ...designData,
+      stateOrProvince: trimmedState,
+    });
   };
 
   return (
@@ -702,6 +738,29 @@ export default function ImageResultScreen() {
           <Text style={styles.helperText}>
             {pricingEstimate.country || 'Market'}{pricingEstimate.stateOrProvince ? ` / ${pricingEstimate.stateOrProvince}` : ''} · {pricingEstimate.taxLabel} · {pricingEstimate.taxRatePercent}%
           </Text>
+
+          {isUSAMarket ? (
+            <View style={styles.stateTaxCard}>
+              <Text style={styles.helperText}>Choose a U.S. state to refresh the sales-tax estimate.</Text>
+              <TextInput
+                value={stateInput}
+                onChangeText={setStateInput}
+                placeholder="Enter state, e.g. New Jersey"
+                placeholderTextColor="#888"
+                style={styles.stateInput}
+              />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stateChipRow}>
+                {USA_STATES.map((stateName) => (
+                  <TouchableOpacity key={stateName} style={[styles.stateChip, stateInput === stateName && styles.stateChipActive]} onPress={() => setStateInput(stateName)}>
+                    <Text style={[styles.stateChipText, stateInput === stateName && styles.stateChipTextActive]}>{stateName}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <TouchableOpacity style={[styles.secondaryButtonOutline, technicalLoading && styles.disabledButton]} onPress={handleUpdateStateEstimate} disabled={technicalLoading}>
+                <Text style={styles.secondaryButtonOutlineText}>{technicalLoading ? 'Refreshing Tax…' : 'Update State Tax Estimate'}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           {pricingEstimate.lines.map((line, index) => (
             <View key={`${line.label}-${index}`} style={styles.priceRow}>
@@ -1162,5 +1221,51 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#444',
     lineHeight: 19,
+  },
+
+  stateTaxCard: {
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: '#ececec',
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: '#fafafa',
+  },
+  stateInput: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#111',
+    backgroundColor: '#fff',
+  },
+  stateChipRow: {
+    paddingTop: 12,
+    paddingBottom: 4,
+    paddingRight: 8,
+  },
+  stateChip: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#fff',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+  },
+  stateChipActive: {
+    backgroundColor: '#111',
+    borderColor: '#111',
+  },
+  stateChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#222',
+  },
+  stateChipTextActive: {
+    color: '#fff',
   },
 });

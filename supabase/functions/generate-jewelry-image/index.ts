@@ -24,13 +24,15 @@ function toNumber(value?: string) {
 }
 
 function normalizeJewelryCategory(value?: string) {
-  const v = normalizeText(value);
-  if (v.includes('ring')) return 'ring';
-  if (v.includes('bangle') || v.includes('kada')) return 'bangle';
-  if (v.includes('bracelet') || v.includes('cuff')) return 'bracelet';
-  if (v.includes('pendant')) return 'pendant';
-  if (v.includes('necklace') || v.includes('chain') || v.includes('mangalsutra')) return 'necklace';
-  if (v.includes('earring') || v.includes('stud') || v.includes('hoop') || v.includes('drop')) return 'earrings';
+  const raw = normalizeText(value);
+  if (!raw) return 'other';
+  const v = raw.replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (/\bearrings?\b/.test(v) || /\bstuds?\b/.test(v) || /\bhoops?\b/.test(v) || /\bdrop earrings?\b/.test(v)) return 'earrings';
+  if (/\bbangles?\b/.test(v) || /\bkada\b/.test(v)) return 'bangle';
+  if (/\bbracelets?\b/.test(v) || /\bcuffs?\b/.test(v)) return 'bracelet';
+  if (/\bpendants?\b/.test(v) || /\blockets?\b/.test(v)) return 'pendant';
+  if (/\bnecklaces?\b/.test(v) || /\bchains?\b/.test(v) || /\bmangalsutra\b/.test(v)) return 'necklace';
+  if (/\brings?\b/.test(v) || /\bband\b/.test(v)) return 'ring';
   return 'other';
 }
 
@@ -182,9 +184,10 @@ function estimateCenterStoneDiameterMm(carat: number, shape?: string): number {
 }
 
 function buildSizingRules(designData: any) {
-  const centerStoneCarat = toNumber(designData?.centerStoneCarat);
-  const sideStoneTotalCarat = toNumber(designData?.sideStoneTotalCarat);
-  const sideStoneCount = toNumber(designData?.sideStoneCount);
+  const inferredStoneMetrics = inferStoneMetrics(designData);
+  const centerStoneCarat = inferredStoneMetrics.centerStoneCarat || toNumber(designData?.centerStoneCarat);
+  const sideStoneTotalCarat = inferredStoneMetrics.sideStoneTotalCarat || toNumber(designData?.sideStoneTotalCarat);
+  const sideStoneCount = inferredStoneMetrics.sideStoneCount || toNumber(designData?.sideStoneCount);
   const prongCount = toNumber(designData?.prongCount);
   const bandWidthMm = toNumber(designData?.bandWidthMm);
   const eachSideStone = sideStoneTotalCarat > 0 && sideStoneCount > 0 ? sideStoneTotalCarat / sideStoneCount : 0;
@@ -308,12 +311,69 @@ function estimateHaloCarat(designData: any) {
   return 0.15;
 }
 
+function inferStoneMetrics(designData: any) {
+  const category = normalizeJewelryCategory(designData?.jewelryType);
+  const stone = normalizeText(designData?.stone);
+  let centerStoneCarat = Math.max(0, toNumber(designData?.centerStoneCarat));
+  let sideStoneTotalCarat = Math.max(0, toNumber(designData?.sideStoneTotalCarat));
+  let sideStoneCount = Math.max(0, Math.round(toNumber(designData?.sideStoneCount)));
+
+  if (!stone || stone.includes('no stone')) {
+    return { centerStoneCarat: 0, sideStoneTotalCarat: 0, sideStoneCount: 0 };
+  }
+
+  const earringStyle = normalizeText(designData?.earringStyle);
+  const setting = normalizeText(designData?.settingStyle);
+  const earringLength = Math.max(0, toNumber(designData?.earringLengthMm));
+
+  if (centerStoneCarat <= 0) {
+    if (category === 'earrings') {
+      if (earringStyle.includes('stud')) centerStoneCarat = 0.8;
+      else if (earringStyle.includes('chandelier')) centerStoneCarat = 1.2;
+      else if (earringStyle.includes('drop')) centerStoneCarat = 0.9;
+      else if (earringStyle.includes('hoop')) centerStoneCarat = 0.35;
+      else centerStoneCarat = earringLength >= 30 ? 0.75 : 0.5;
+    } else if (category === 'pendant') centerStoneCarat = 0.75;
+    else if (category === 'necklace') centerStoneCarat = 0.55;
+    else if (category === 'bracelet') centerStoneCarat = 0.18;
+    else if (category === 'bangle') centerStoneCarat = 0.22;
+  }
+
+  if (sideStoneTotalCarat <= 0) {
+    if (category === 'earrings') {
+      if (setting.includes('halo')) sideStoneTotalCarat = 0.4;
+      else if (earringStyle.includes('chandelier')) sideStoneTotalCarat = 0.65;
+      else if (earringStyle.includes('drop')) sideStoneTotalCarat = 0.45;
+      else if (earringStyle.includes('hoop')) sideStoneTotalCarat = 0.3;
+    } else if (category === 'bracelet') sideStoneTotalCarat = 1.5;
+    else if (category === 'bangle') sideStoneTotalCarat = 2.1;
+    else if (category === 'necklace' || category === 'pendant') sideStoneTotalCarat = setting.includes('halo') ? 0.3 : 0.15;
+  }
+
+  if (sideStoneCount <= 0 && sideStoneTotalCarat > 0) {
+    if (category === 'earrings') {
+      if (earringStyle.includes('chandelier')) sideStoneCount = 20;
+      else if (earringStyle.includes('drop')) sideStoneCount = 12;
+      else if (earringStyle.includes('hoop')) sideStoneCount = 16;
+      else sideStoneCount = 8;
+    } else if (category === 'bracelet' || category === 'bangle') sideStoneCount = 24;
+    else if (category === 'necklace' || category === 'pendant') sideStoneCount = setting.includes('halo') ? 14 : 8;
+  }
+
+  return {
+    centerStoneCarat: Number(centerStoneCarat.toFixed(2)),
+    sideStoneTotalCarat: Number(sideStoneTotalCarat.toFixed(2)),
+    sideStoneCount,
+  };
+}
+
 function buildStoneCostBreakdown(designData: any) {
   const stone = normalizeText(designData?.stone);
   const rate = getStoneUsdPerCarat(designData);
-  const centerStoneCarat = Math.max(0, toNumber(designData?.centerStoneCarat));
-  const sideStoneTotalCarat = Math.max(0, toNumber(designData?.sideStoneTotalCarat));
-  const haloCarat = estimateHaloCarat(designData);
+  const inferredStoneMetrics = inferStoneMetrics(designData);
+  const centerStoneCarat = Math.max(0, inferredStoneMetrics.centerStoneCarat || toNumber(designData?.centerStoneCarat));
+  const sideStoneTotalCarat = Math.max(0, inferredStoneMetrics.sideStoneTotalCarat || toNumber(designData?.sideStoneTotalCarat));
+  const haloCarat = estimateHaloCarat({ ...designData, centerStoneCarat: String(centerStoneCarat), sideStoneTotalCarat: String(sideStoneTotalCarat) });
   const centerMultiplier = stone.includes('diamond') ? 1 : 0.92;
   const accentMultiplier = stone.includes('diamond') ? 0.34 : 0.5;
   const haloMultiplier = stone.includes('diamond') ? 0.28 : 0.42;
@@ -487,10 +547,11 @@ function buildTechnicalSheetData(designData: any) {
   const stone = safe(designData?.stone);
   const shape = safe(designData?.shape);
   const finishLevel = safe(designData?.finishLevel, 'polished');
-  const centerStoneCarat = toNumber(designData?.centerStoneCarat);
+  const inferredStoneMetrics = inferStoneMetrics(designData);
+  const centerStoneCarat = inferredStoneMetrics.centerStoneCarat || toNumber(designData?.centerStoneCarat);
   const centerStoneDiameterMm = estimateCenterStoneDiameterMm(centerStoneCarat, designData?.shape);
-  const sideStoneTotalCarat = toNumber(designData?.sideStoneTotalCarat);
-  const sideStoneCount = Math.round(toNumber(designData?.sideStoneCount));
+  const sideStoneTotalCarat = inferredStoneMetrics.sideStoneTotalCarat || toNumber(designData?.sideStoneTotalCarat);
+  const sideStoneCount = inferredStoneMetrics.sideStoneCount || Math.round(toNumber(designData?.sideStoneCount));
   const sideStonesPerSide = sideStoneCount > 0 && sideStoneCount % 2 === 0 ? sideStoneCount / 2 : sideStoneCount;
   const sideStoneEachCarat = sideStoneCount > 0 ? Number((sideStoneTotalCarat / sideStoneCount).toFixed(3)) : 0;
   const prongCount = Math.round(toNumber(designData?.prongCount));
@@ -672,7 +733,7 @@ Reference inspiration analysis: ${inspirationAnalysis || 'No inspiration analysi
 Photorealistic only.`;
 }
 
-function buildPersonalPreviewPrompt(designData: any, inspirationAnalysis: string) {
+function buildPersonalPreviewPrompt(designData: any, inspirationAnalysis: string, selectedOptionLabel?: string, selectedTechnicalSheet?: any) {
   return `Create a personal jewelry try-on preview using the provided selected jewelry option image and the uploaded customer face photo.
 
 Input priority:
@@ -683,9 +744,14 @@ Hard requirements:
 - Preserve the jewelry from Image 1 / Image 3 exactly as selected.
 - Do not redesign, restyle, resize, recolor, or reinterpret the jewelry.
 - Keep the exact same metal color, stone arrangement, silhouette, setting style, and visible proportions.
+- Exact shape lock: ${designData?.shape || selectedTechnicalSheet?.shape || 'not specified'}.
+- Exact product-type lock: ${designData?.jewelryType || selectedTechnicalSheet?.jewelryType || 'jewelry'}.
+- Exact sub-style lock: earrings=${designData?.earringStyle || selectedTechnicalSheet?.earringStyle || 'not specified'}, pendant=${designData?.pendantStyle || selectedTechnicalSheet?.pendantStyle || 'not specified'}, chain=${designData?.chainStyle || selectedTechnicalSheet?.chainStyle || 'not specified'}.
+- If the selected option shows a pear-cut drop, keep it pear-cut. If it shows oval, keep oval. Never swap one stone cut for another.
 - The customer face must stay as close as possible to the uploaded person with no face widening, slimming, age shift, or beauty-filter distortion.
 - This should look like the selected jewelry was realistically placed onto the uploaded person, not like a newly invented jewelry concept.
 - If there is any conflict, prioritize jewelry fidelity and face identity over scene creativity.
+- Treat selected option ${selectedOptionLabel || 'chosen option'} as the locked blueprint.
 
 Wearer styling:
 - Gender / style: ${safe(designData?.wearerGender, 'female')} with ${safe(designData?.wearerStyle, 'luxury styling')}
@@ -765,6 +831,8 @@ Deno.serve(async (req) => {
       uploadedInspirationUrls,
       editInstruction,
       selectedBaseImage,
+      selectedOptionLabel,
+      selectedTechnicalSheet,
       facePhotoDataUrl,
       mode,
       optionIndex,
@@ -852,7 +920,15 @@ Requested edit from user:
 ${editInstruction || 'No additional change request.'}
 
 Selected option direction:
-${option.label}: ${option.instruction}
+${selectedOptionLabel || option.label}: ${option.instruction}
+
+Selected option fidelity locks:
+- Selected option label: ${selectedOptionLabel || option.label}
+- Locked stone shape: ${designData?.shape || selectedTechnicalSheet?.shape || 'not specified'}
+- Locked setting style: ${designData?.settingStyle || selectedTechnicalSheet?.settingStyle || 'not specified'}
+- Locked earring style: ${designData?.earringStyle || selectedTechnicalSheet?.earringStyle || 'not specified'}
+- Locked pendant style: ${designData?.pendantStyle || selectedTechnicalSheet?.pendantStyle || 'not specified'}
+- Locked chain style: ${designData?.chainStyle || selectedTechnicalSheet?.chainStyle || 'not specified'}
 
 Critical source behavior:
 ${hasInspiration
@@ -897,7 +973,7 @@ ${hasInspiration
       const personalResult = await callImageEdit({
         openaiApiKey,
         images: [selectedBaseImage, facePhotoDataUrl, selectedBaseImage],
-        prompt: `${baseContext}\n\n${buildPersonalPreviewPrompt(designData || {}, inspirationAnalysis || '')}`,
+        prompt: `${baseContext}\n\n${buildPersonalPreviewPrompt(designData || {}, inspirationAnalysis || '', selectedOptionLabel, selectedTechnicalSheet)}`,
         size: '1024x1536',
         quality: 'high',
         inputFidelity: 'high',

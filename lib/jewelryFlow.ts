@@ -16,41 +16,52 @@ export function normalizeText(value?: string) {
 }
 
 export function normalizeJewelryType(value?: string): SupportedJewelryType {
-  const v = normalizeText(value);
+  const raw = normalizeText(value);
+  if (!raw) return 'other';
 
-  if (
-    v.includes('engagement ring') ||
-    v.includes('wedding ring') ||
-    v.includes('wedding band') ||
-    v.includes('ring')
-  ) {
+  const compact = raw.replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  if ([
+    'earring',
+    'earrings',
+    'stud',
+    'studs',
+    'hoop',
+    'hoops',
+    'drop earring',
+    'drop earrings',
+    'chandelier earring',
+    'chandelier earrings',
+  ].includes(compact)) {
+    return 'earrings';
+  }
+
+  if (['ring', 'rings', 'engagement ring', 'wedding ring', 'wedding band', 'band'].includes(compact)) {
     return 'ring';
   }
 
-  if (v.includes('bangle') || v.includes('kada')) {
-    return 'bangle';
-  }
-
-  if (v.includes('bracelet') || v.includes('cuff') || v.includes('tennis bracelet')) {
-    return 'bracelet';
-  }
-
-  if (v.includes('pendant')) {
+  if (['pendant', 'pendants', 'locket', 'lockets'].includes(compact)) {
     return 'pendant';
   }
 
-  if (v.includes('necklace') || v.includes('chain') || v.includes('mangalsutra')) {
+  if (['necklace', 'necklaces', 'chain', 'chains', 'mangalsutra', 'choker'].includes(compact)) {
     return 'necklace';
   }
 
-  if (
-    v.includes('earring') ||
-    v.includes('stud') ||
-    v.includes('hoop') ||
-    v.includes('drop')
-  ) {
-    return 'earrings';
+  if (['bracelet', 'bracelets', 'cuff', 'cuffs', 'tennis bracelet'].includes(compact)) {
+    return 'bracelet';
   }
+
+  if (['bangle', 'bangles', 'kada', 'kadas'].includes(compact)) {
+    return 'bangle';
+  }
+
+  if (/\bearrings?\b/.test(compact) || /\bstuds?\b/.test(compact) || /\bhoops?\b/.test(compact)) return 'earrings';
+  if (/\bpendants?\b/.test(compact) || /\blockets?\b/.test(compact)) return 'pendant';
+  if (/\bnecklaces?\b/.test(compact) || /\bchains?\b/.test(compact) || /\bmangalsutra\b/.test(compact) || /\bchoker\b/.test(compact)) return 'necklace';
+  if (/\bbracelets?\b/.test(compact) || /\bcuffs?\b/.test(compact)) return 'bracelet';
+  if (/\bbangles?\b/.test(compact) || /\bkada\b/.test(compact)) return 'bangle';
+  if (/\brings?\b/.test(compact) || /\bband\b/.test(compact)) return 'ring';
 
   return 'other';
 }
