@@ -10,11 +10,18 @@ import {
   View,
 } from 'react-native';
 import { DesignData, useDesign } from '../context/DesignContext';
+import { getVisibleFieldsForDesign } from '../lib/designSchema';
+import {
+  getCurrencyForCountry,
+  normalizeCountry,
+  normalizeJewelryType,
+} from '../lib/jewelryFlow';
 
-const editableFields: { key: keyof DesignData; label: string; multiline?: boolean }[] = [
+const baseEditableFields: { key: keyof DesignData; label: string; multiline?: boolean }[] = [
   { key: 'jewelryType', label: 'Jewelry Type' },
   { key: 'occasion', label: 'Occasion' },
   { key: 'country', label: 'Country / Region' },
+  { key: 'stateOrProvince', label: 'State / Province (for tax if applicable)' },
   { key: 'wearerGender', label: 'Wearer Gender' },
   { key: 'wearerStyle', label: 'Wearer Style' },
   { key: 'metal', label: 'Metal' },
@@ -31,11 +38,22 @@ const editableFields: { key: keyof DesignData; label: string; multiline?: boolea
 
   { key: 'settingStyle', label: 'Setting Style' },
   { key: 'bandStyle', label: 'Band Style' },
+
   { key: 'necklaceLength', label: 'Necklace Length' },
   { key: 'chainStyle', label: 'Chain Style' },
   { key: 'pendantStyle', label: 'Pendant Style' },
+
   { key: 'braceletStyle', label: 'Bracelet Style' },
   { key: 'claspStyle', label: 'Clasp Style' },
+  { key: 'wristSize', label: 'Wrist Size' },
+  { key: 'bangleStyle', label: 'Bangle Style' },
+  { key: 'bangleInnerDiameterMm', label: 'Bangle Inner Diameter / Size' },
+  { key: 'isOpenableBangle', label: 'Bangle Opening Style' },
+
+  { key: 'earringStyle', label: 'Earring Style' },
+  { key: 'earringLengthMm', label: 'Earring Length / Size' },
+  { key: 'earringBackingType', label: 'Earring Backing Type' },
+
   { key: 'finishLevel', label: 'Finish Level' },
   { key: 'styleMood', label: 'Style Mood' },
   { key: 'referenceInspiration', label: 'Reference Inspiration' },
@@ -44,6 +62,7 @@ const editableFields: { key: keyof DesignData; label: string; multiline?: boolea
   { key: 'outfitType', label: 'Outfit Type' },
   { key: 'outfitColor', label: 'Outfit Color' },
   { key: 'wantsModelPreview', label: 'Model Preview Requested' },
+  { key: 'budgetCurrency', label: 'Budget Currency' },
   { key: 'budget', label: 'Budget' },
   { key: 'finalCustomNote', label: 'Final Custom Note', multiline: true },
 ];
@@ -65,11 +84,40 @@ export default function SummaryScreen() {
   } = useDesign();
 
   const updateField = (key: keyof DesignData, value: string) => {
-    setDesignData((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
+    setDesignData((prev) => {
+      const next = {
+        ...prev,
+        [key]: value,
+      };
+
+      if (key === 'country') {
+        next.budgetCurrency = getCurrencyForCountry(value);
+        if (normalizeCountry(value) !== 'usa') {
+          next.stateOrProvince = '';
+        }
+      }
+
+      return next;
+    });
   };
+
+  const normalizedType = useMemo(
+    () => normalizeJewelryType(designData.jewelryType),
+    [designData.jewelryType]
+  );
+
+  const normalizedCountry = useMemo(
+    () => normalizeCountry(designData.country),
+    [designData.country]
+  );
+
+
+  const editableFields = useMemo(() => {
+    const fieldMap = new Map(baseEditableFields.map((field) => [field.key, field]));
+    return getVisibleFieldsForDesign(designData)
+      .map((field) => fieldMap.get(field.key) || field)
+      .filter(Boolean) as { key: keyof DesignData; label: string; multiline?: boolean }[];
+  }, [designData]);
 
   const derivedSizingText = useMemo(() => {
     const centerStoneCarat = toNumber(designData.centerStoneCarat);
@@ -83,60 +131,97 @@ export default function SummaryScreen() {
         ? sideStoneTotalCarat / sideStoneCount
         : 0;
 
-    const parts = [
-      designData.ringSize
-        ? `Ring size target: ${designData.ringSize}.`
-        : 'Ring size not specified yet.',
-      centerStoneCarat > 0
-        ? `Center stone should visually read close to ${centerStoneCarat} carat.`
-        : 'No center stone carat specified.',
-      sideStoneTotalCarat > 0
-        ? `Total side stone carat weight: ${sideStoneTotalCarat} carat.`
-        : 'No side stones requested.',
-      sideStoneCount > 0
-        ? `Side stone count: ${sideStoneCount}, approximately ${eachSideStone.toFixed(3)} carat per side stone if evenly distributed.`
-        : 'No side stone count specified.',
-      prongCount > 0
-        ? `Prong count target: ${prongCount}.`
-        : 'Prong count not specified.',
-      bandWidthMm > 0
-        ? `Band width target: ${bandWidthMm} mm.`
-        : 'Band width not specified.',
-    ];
+    if (normalizedType === 'ring') {
+      return `Ring size: ${designData.ringSize || 'not specified'}. Center stone target: ${
+        centerStoneCarat || 0
+      } ct. Side stones total: ${sideStoneTotalCarat || 0} ct across ${
+        sideStoneCount || 0
+      } stones (${eachSideStone ? eachSideStone.toFixed(3) : 0} ct each when evenly split). Prongs: ${
+        prongCount || 0
+      }. Band width target: ${bandWidthMm || 0} mm.`;
+    }
 
-    return parts.join(' ');
-  }, [designData]);
+    if (normalizedType === 'bangle') {
+      return `Bangle size details: wrist size ${designData.wristSize || 'not specified'}, inner diameter / size ${
+        designData.bangleInnerDiameterMm || 'not specified'
+      }, opening style ${designData.isOpenableBangle || 'not specified'}.`;
+    }
+
+    if (normalizedType === 'bracelet') {
+      return `Bracelet sizing details: wrist size ${designData.wristSize || 'not specified'}, style ${
+        designData.braceletStyle || 'not specified'
+      }, clasp ${designData.claspStyle || 'not specified'}.`;
+    }
+
+    if (normalizedType === 'necklace' || normalizedType === 'pendant') {
+      return `Neckwear sizing details: necklace length ${
+        designData.necklaceLength || 'not specified'
+      }, chain style ${designData.chainStyle || 'not specified'}, pendant style ${
+        designData.pendantStyle || 'not specified'
+      }.`;
+    }
+
+    if (normalizedType === 'earrings') {
+      return `Earring details: style ${designData.earringStyle || 'not specified'}, size/length ${
+        designData.earringLengthMm || 'not specified'
+      }, backing ${designData.earringBackingType || 'not specified'}.`;
+    }
+
+    return 'General custom-jewelry flow selected. Add more details in the final custom note if needed.';
+  }, [designData, normalizedType]);
+
+  const marketText = useMemo(() => {
+    if (normalizedCountry === 'india') {
+      return 'India market context: INR budget, bridal/festive/traditional styling supported.';
+    }
+
+    if (normalizedCountry === 'dubai') {
+      return 'Dubai market context: AED budget, high-luxury and gold-forward styling supported.';
+    }
+
+    if (normalizedCountry === 'usa') {
+      return 'USA market context: USD budget, bridal/fashion/modern luxury styling supported.';
+    }
+
+    return 'Global market context with flexible styling and currency.';
+  }, [normalizedCountry]);
 
   const designBrief = useMemo(() => {
     const inspirationText = inspirationAnalysis
       ? `Inspiration analysis: ${inspirationAnalysis}.`
       : inspirationImages.length > 0
-      ? `Inspiration images were uploaded and should strongly influence the final structure, motif language, and style.`
-      : `No inspiration images were uploaded. The final custom note should be treated as the main design driver.`;
+      ? 'Use uploaded inspiration images as design guidance and keep the final piece unique.'
+      : 'No inspiration images were uploaded. Use the customer’s answers and final custom note as the primary design source, and follow the detailed written specification strongly.';
 
-    return `Create a ${designData.jewelryType || 'fine jewelry'} piece for ${
+    const structureText =
+      designData.bandStyle ||
+      designData.chainStyle ||
+      designData.braceletStyle ||
+      designData.bangleStyle ||
+      designData.earringStyle ||
+      'not specified';
+
+    const budgetCurrency =
+      designData.budgetCurrency || getCurrencyForCountry(designData.country);
+
+    return `A custom ${designData.jewelryType || 'jewelry piece'} created for ${
       designData.occasion || 'a special occasion'
-    }. Market/style context: ${designData.country || 'global luxury'}. Wearer: ${
-      designData.wearerGender || 'not specified'
-    }, style: ${designData.wearerStyle || 'not specified'}. Material: ${
+    }, designed for the ${designData.country || 'target'} market and intended for ${
+      designData.wearerGender || 'the wearer'
+    } with a ${designData.wearerStyle || 'refined'} aesthetic. Metal: ${
       designData.metalPurity ? `${designData.metalPurity} ` : ''
     }${designData.metal || 'premium metal'}. Stone: ${
       designData.shape ? `${designData.shape} ` : ''
     }${designData.stone || 'premium gemstone'}. ${derivedSizingText} Setting: ${
       designData.settingStyle || 'not specified'
-    }. Band/structure: ${
-      designData.bandStyle ||
-      designData.chainStyle ||
-      designData.braceletStyle ||
-      'not specified'
-    }. Finish: ${designData.finishLevel || 'polished'}. Mood: ${
-      designData.styleMood || 'luxurious'
-    }. Outfit context: ${designData.outfitType || 'luxury styling'} in ${
-      designData.outfitColor || 'a refined palette'
-    }. ${inspirationText} Final custom note: ${
+    }. Structure / style: ${structureText}. Finish: ${
+      designData.finishLevel || 'polished'
+    }. Mood: ${designData.styleMood || 'luxurious'}. Outfit context: ${
+      designData.outfitType || 'luxury styling'
+    } in ${designData.outfitColor || 'a refined palette'}. ${marketText} ${inspirationText} Final custom note: ${
       designData.finalCustomNote || 'None'
-    }. Budget: ${designData.budget || 'to be decided'}.`;
-  }, [designData, inspirationImages, inspirationAnalysis, derivedSizingText]);
+    }. Budget: ${budgetCurrency} ${designData.budget || 'to be decided'}.`;
+  }, [designData, inspirationImages, inspirationAnalysis, derivedSizingText, marketText]);
 
   const imagePrompt = useMemo(() => {
     const centerStoneCarat = toNumber(designData.centerStoneCarat);
@@ -153,12 +238,21 @@ export default function SummaryScreen() {
     const inspirationText = inspirationAnalysis
       ? `Use this inspiration analysis strongly: ${inspirationAnalysis}.`
       : inspirationImages.length > 0
-      ? `The uploaded inspiration images should strongly influence the final design's structure, motif language, detailing density, and styling, while keeping the final piece original.`
-      : `No inspiration images were uploaded. Use the customer’s final detailed note and all answered fields as the primary design source.`;
+      ? `The uploaded inspiration images should strongly influence the final design's structure, motif language, detailing density, and cultural styling, while keeping the final piece original.`
+      : `No inspiration images were uploaded. Use the customer’s final detailed note and all answered fields as the primary design source. Follow the written specification heavily and do not drift into generic jewelry.`;
+
+    const marketText =
+      normalizedCountry === 'india'
+        ? 'Design for the India market with support for bridal, festive, and heritage luxury cues when relevant.'
+        : normalizedCountry === 'dubai'
+        ? 'Design for the Dubai market with support for gold-forward, glamorous, high-luxury styling when relevant.'
+        : normalizedCountry === 'usa'
+        ? 'Design for the USA market with support for bridal, modern, and fashion-luxury styling when relevant.'
+        : 'Design for a global luxury market.';
 
     return `Luxury jewelry product photography of a ${designData.jewelryType || 'fine jewelry piece'}, designed for ${
       designData.occasion || 'a special occasion'
-    }, influenced by ${designData.country || 'global luxury taste'}, for ${
+    }, for the ${designData.country || 'global'} market${designData.stateOrProvince ? ` in ${designData.stateOrProvince}` : ''}, for ${
       designData.wearerGender || 'the wearer'
     } with a ${designData.wearerStyle || 'refined'} aesthetic. Crafted in ${
       designData.metalPurity ? `${designData.metalPurity} ` : ''
@@ -174,21 +268,29 @@ export default function SummaryScreen() {
       eachSideStone ? eachSideStone.toFixed(3) : 0
     } carat per stone when side stones are present. Prong count: ${
       prongCount || 0
-    }. Band width target: ${bandWidthMm || 0} mm. The prongs, center stone size, side stone proportions, ring scale, and band width should visually match the requested sizing as closely as possible. Setting: ${
+    }. Band width target: ${bandWidthMm || 0} mm. Necklace length: ${
+      designData.necklaceLength || 'not specified'
+    }. Bracelet style: ${designData.braceletStyle || 'not specified'}. Bangle style: ${
+      designData.bangleStyle || 'not specified'
+    }. Wrist size: ${designData.wristSize || 'not specified'}. Earring style: ${
+      designData.earringStyle || 'not specified'
+    }. Earring size/length: ${designData.earringLengthMm || 'not specified'}. Setting: ${
       designData.settingStyle || 'not specified'
-    }. Band or structure: ${
+    }. Structure: ${
       designData.bandStyle ||
       designData.chainStyle ||
       designData.braceletStyle ||
+      designData.bangleStyle ||
+      designData.earringStyle ||
       'not specified'
     }. Finish: ${designData.finishLevel || 'polished'}. Mood: ${
       designData.styleMood || 'elegant and luxurious'
     }. Outfit styling reference: ${designData.outfitType || 'luxury styling'} in ${
       designData.outfitColor || 'a refined palette'
-    }. ${inspirationText} Final custom note: ${
+    }. ${marketText} ${inspirationText} Final custom note: ${
       designData.finalCustomNote || 'None'
     }. Ultra realistic, premium studio lighting, macro detail, elegant reflections, sharp focus, photorealistic, high-end jewelry advertisement, catalog-quality photoshoot, extremely refined craftsmanship.`;
-  }, [designData, inspirationImages, inspirationAnalysis]);
+  }, [designData, inspirationImages, inspirationAnalysis, normalizedCountry]);
 
   useEffect(() => {
     setGeneratedPrompt(imagePrompt);
@@ -219,6 +321,19 @@ export default function SummaryScreen() {
             />
           </View>
         ))}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Dynamic Flow Summary</Text>
+        <Text style={styles.description}>
+          Normalized jewelry type: {normalizedType}
+          {'\n'}
+          Market: {designData.country || 'not specified'}{designData.stateOrProvince ? ` / ${designData.stateOrProvince}` : ''}
+          {'\n'}
+          Budget currency: {designData.budgetCurrency || getCurrencyForCountry(designData.country)}
+          {'\n'}
+          {marketText}
+        </Text>
       </View>
 
       <View style={styles.card}>

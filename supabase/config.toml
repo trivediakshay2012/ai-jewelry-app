@@ -1,0 +1,7 @@
+project_id = "ai-jewelry-app"
+
+[functions.analyze-inspiration]
+verify_jwt = false
+
+[functions.generate-jewelry-image]
+verify_jwt = false

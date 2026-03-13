@@ -1,9 +1,13 @@
 import React, { createContext, useContext, useState } from 'react';
+import { getQuestionText, getQuestionsForDesign } from '../lib/designSchema';
+import { getCurrencyForCountry } from '../lib/jewelryFlow';
+import { VendorStockItem } from '../lib/vendorInventory';
 
 export type DesignData = {
   jewelryType: string;
   occasion: string;
   country: string;
+  stateOrProvince: string;
   wearerGender: string;
   wearerStyle: string;
   metal: string;
@@ -20,11 +24,22 @@ export type DesignData = {
 
   settingStyle: string;
   bandStyle: string;
+
   necklaceLength: string;
   chainStyle: string;
   pendantStyle: string;
+
   braceletStyle: string;
   claspStyle: string;
+  wristSize: string;
+  bangleStyle: string;
+  bangleInnerDiameterMm: string;
+  isOpenableBangle: string;
+
+  earringStyle: string;
+  earringLengthMm: string;
+  earringBackingType: string;
+
   finishLevel: string;
   styleMood: string;
   referenceInspiration: string;
@@ -33,8 +48,11 @@ export type DesignData = {
   outfitType: string;
   outfitColor: string;
   wantsModelPreview: string;
-  finalCustomNote: string;
+
   budget: string;
+  budgetCurrency: string;
+
+  finalCustomNote: string;
 };
 
 export type Message = {
@@ -58,6 +76,12 @@ type DesignContextType = {
   setInspirationAnalysis: React.Dispatch<React.SetStateAction<string>>;
   facePhotoUri: string | null;
   setFacePhotoUri: React.Dispatch<React.SetStateAction<string | null>>;
+  cartItems: VendorStockItem[];
+  setCartItems: React.Dispatch<React.SetStateAction<VendorStockItem[]>>;
+  vendorInspirationItem: VendorStockItem | null;
+  setVendorInspirationItem: React.Dispatch<React.SetStateAction<VendorStockItem | null>>;
+  applyVendorInspiration: (item: VendorStockItem) => void;
+  addToCart: (item: VendorStockItem) => void;
   resetDesign: () => void;
 };
 
@@ -65,6 +89,7 @@ const initialDesignData: DesignData = {
   jewelryType: '',
   occasion: '',
   country: '',
+  stateOrProvince: '',
   wearerGender: '',
   wearerStyle: '',
   metal: '',
@@ -81,11 +106,22 @@ const initialDesignData: DesignData = {
 
   settingStyle: '',
   bandStyle: '',
+
   necklaceLength: '',
   chainStyle: '',
   pendantStyle: '',
+
   braceletStyle: '',
   claspStyle: '',
+  wristSize: '',
+  bangleStyle: '',
+  bangleInnerDiameterMm: '',
+  isOpenableBangle: '',
+
+  earringStyle: '',
+  earringLengthMm: '',
+  earringBackingType: '',
+
   finishLevel: '',
   styleMood: '',
   referenceInspiration: '',
@@ -94,15 +130,18 @@ const initialDesignData: DesignData = {
   outfitType: '',
   outfitColor: '',
   wantsModelPreview: '',
-  finalCustomNote: '',
+
   budget: '',
+  budgetCurrency: '',
+
+  finalCustomNote: '',
 };
 
 const initialMessages: Message[] = [
   {
     id: '1',
     role: 'assistant',
-    text: 'Hi! I’m your AI jewelry designer. What type of jewelry would you like to create today? For example: ring, necklace, bracelet, pendant, earrings.',
+    text: 'Hi! I’m your AI jewelry designer. Tell me the jewelry type and I will switch to that product’s dedicated questionnaire.',
   },
 ];
 
@@ -116,6 +155,54 @@ export function DesignProvider({ children }: { children: React.ReactNode }) {
   const [uploadedInspirationUrls, setUploadedInspirationUrls] = useState<string[]>([]);
   const [inspirationAnalysis, setInspirationAnalysis] = useState('');
   const [facePhotoUri, setFacePhotoUri] = useState<string | null>(null);
+  const [cartItems, setCartItems] = useState<VendorStockItem[]>([]);
+  const [vendorInspirationItem, setVendorInspirationItem] = useState<VendorStockItem | null>(null);
+
+  const addToCart = (item: VendorStockItem) => {
+    setCartItems((prev) => (prev.find((entry) => entry.id === item.id) ? prev : [...prev, item]));
+  };
+
+  const applyVendorInspiration = (item: VendorStockItem) => {
+    const nextData: DesignData = {
+      ...initialDesignData,
+      jewelryType: item.category,
+      country: item.market,
+      budgetCurrency: item.currency,
+      metal: item.metal,
+      metalPurity: item.metalPurity,
+      stone: item.stone,
+      shape: item.shape,
+      styleMood: item.styleMood,
+      referenceInspiration: `${item.vendorName} inventory piece: ${item.title}`,
+      finalCustomNote: `${item.description} Use this vendor stock piece as the core inspiration and evolve it only when necessary.`,
+      ...(item.specs as Partial<DesignData>),
+    };
+
+    const nextQuestions = getQuestionsForDesign(nextData);
+    const nextIndex = nextQuestions.findIndex((itemQuestion) => !nextData[itemQuestion.key]);
+    setVendorInspirationItem(item);
+    setDesignData(nextData);
+    setMessages([
+      {
+        id: 'vendor-seed-1',
+        role: 'assistant',
+        text: `Loaded inspiration from ${item.vendorName}: ${item.title}. I have prefilled the design flow with the product’s category, metal, stone, and styling.`,
+      },
+      {
+        id: 'vendor-seed-2',
+        role: 'assistant',
+        text:
+          nextIndex >= 0
+            ? getQuestionText(nextQuestions[nextIndex], nextData)
+            : 'Everything is already filled. You can move straight to the summary.',
+      },
+    ]);
+    setInspirationImages(item.imageUrl ? [item.imageUrl] : []);
+    setUploadedInspirationUrls(item.imageUrl ? [item.imageUrl] : []);
+    setInspirationAnalysis(`${item.title}. ${item.description}`);
+    setGeneratedPrompt('');
+    setFacePhotoUri(null);
+  };
 
   const resetDesign = () => {
     setDesignData(initialDesignData);
@@ -125,6 +212,7 @@ export function DesignProvider({ children }: { children: React.ReactNode }) {
     setUploadedInspirationUrls([]);
     setInspirationAnalysis('');
     setFacePhotoUri(null);
+    setVendorInspirationItem(null);
   };
 
   return (
@@ -144,6 +232,12 @@ export function DesignProvider({ children }: { children: React.ReactNode }) {
         setInspirationAnalysis,
         facePhotoUri,
         setFacePhotoUri,
+        cartItems,
+        setCartItems,
+        vendorInspirationItem,
+        setVendorInspirationItem,
+        applyVendorInspiration,
+        addToCart,
         resetDesign,
       }}
     >

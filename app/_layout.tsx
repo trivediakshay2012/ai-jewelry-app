@@ -14,7 +14,7 @@ export default function RootLayout() {
         <Stack.Screen name="summary" options={{ title: 'Design Summary' }} />
         <Stack.Screen name="image-result" options={{ title: 'Generated Design' }} />
         <Stack.Screen name="saved-designs" options={{ title: 'Saved Designs' }} />
-        <Stack.Screen name="vendor-dashboard" options={{ title: 'Vendor Dashboard' }} />
+        <Stack.Screen name="vendor-dashboard" options={{ title: 'Vendor Marketplace' }} />
       </Stack>
     </DesignProvider>
   );

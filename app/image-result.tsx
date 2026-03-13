@@ -30,6 +30,38 @@ type GeneratedImage = {
   dataUrl: string;
 };
 
+type BudgetAwareChange = {
+  title: string;
+  detail: string;
+};
+
+type PricingEstimate = {
+  country: string;
+  stateOrProvince?: string;
+  currency: string;
+  metalWeightGrams: number;
+  taxRatePercent: number;
+  taxLabel: string;
+  subtotal: number;
+  taxAmount: number;
+  total: number;
+  targetBudget: number | null;
+  differenceToBudget: number | null;
+  isWithinBudget: boolean | null;
+  lines: { label: string; value: number }[];
+  disclaimer: string;
+};
+
+type BudgetAwareReport = {
+  title: string;
+  targetBudget: string;
+  protectedDesign: string;
+  changeSummary: string;
+  originalEstimate?: PricingEstimate;
+  optimizedEstimate?: PricingEstimate;
+  changes: BudgetAwareChange[];
+};
+
 export default function ImageResultScreen() {
   const {
     generatedPrompt,
@@ -47,8 +79,13 @@ export default function ImageResultScreen() {
   const [productImages, setProductImages] = useState<GeneratedImage[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [lifestyleImages, setLifestyleImages] = useState<(GeneratedImage | null)[]>([]);
-  const [personalPreviewImages, setPersonalPreviewImages] = useState<(GeneratedImage | null)[]>([]);
+  const [personalPreviewImages, setPersonalPreviewImages] = useState<(GeneratedImage | null)[]>(
+    []
+  );
+  const [budgetAwareImages, setBudgetAwareImages] = useState<(GeneratedImage | null)[]>([]);
+  const [budgetAwareReports, setBudgetAwareReports] = useState<(BudgetAwareReport | null)[]>([]);
   const [technicalSheet, setTechnicalSheet] = useState<TechnicalSheetData | null>(null);
+  const [pricingEstimate, setPricingEstimate] = useState<PricingEstimate | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -56,16 +93,34 @@ export default function ImageResultScreen() {
   const [lifestyleLoading, setLifestyleLoading] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [personalPreviewLoading, setPersonalPreviewLoading] = useState(false);
+  const [budgetAwareLoading, setBudgetAwareLoading] = useState(false);
   const [technicalLoading, setTechnicalLoading] = useState(false);
 
   const [editInstruction, setEditInstruction] = useState('');
   const [editablePrompt, setEditablePrompt] = useState('');
 
   useEffect(() => {
-    setEditablePrompt(generatedPrompt);
+    setEditablePrompt(generatedPrompt || '');
   }, [generatedPrompt]);
 
-  const handleFunctionError = async (error: any) => {
+  const isBusy =
+    loading ||
+    analyzing ||
+    lifestyleLoading ||
+    regenerating ||
+    personalPreviewLoading ||
+    budgetAwareLoading ||
+    technicalLoading;
+
+  const selectedImage = productImages[selectedIndex] || null;
+  const selectedLifestyle = lifestyleImages[selectedIndex] || null;
+  const selectedPersonalPreview = personalPreviewImages[selectedIndex] || null;
+  const selectedBudgetAware = budgetAwareImages[selectedIndex] || null;
+  const selectedBudgetAwareReport = budgetAwareReports[selectedIndex] || null;
+
+  const hasBudget = Boolean(String(designData?.budget || '').trim());
+
+  const handleFunctionError = async (error: unknown) => {
     if (error instanceof FunctionsHttpError) {
       const errorBody = await error.context.json();
       console.log('Function returned an error:', errorBody);
@@ -135,19 +190,42 @@ export default function ImageResultScreen() {
     };
   };
 
+  const resetDerivedImagesForOption = (index: number) => {
+    setLifestyleImages((prev) => {
+      const next = [...prev];
+      next[index] = null;
+      return next;
+    });
+
+    setPersonalPreviewImages((prev) => {
+      const next = [...prev];
+      next[index] = null;
+      return next;
+    });
+
+    setBudgetAwareImages((prev) => {
+      const next = [...prev];
+      next[index] = null;
+      return next;
+    });
+
+    setBudgetAwareReports((prev) => {
+      const next = [...prev];
+      next[index] = null;
+      return next;
+    });
+  };
+
   const handleGenerateTechnicalSheet = async () => {
     try {
       setTechnicalLoading(true);
 
-      const { data, error } = await supabase.functions.invoke(
-        'generate-jewelry-image',
-        {
-          body: {
-            designData,
-            mode: 'technical-sheet',
-          },
-        }
-      );
+      const { data, error } = await supabase.functions.invoke('generate-jewelry-image', {
+        body: {
+          designData,
+          mode: 'technical-sheet',
+        },
+      });
 
       if (error) {
         await handleFunctionError(error);
@@ -160,6 +238,7 @@ export default function ImageResultScreen() {
       }
 
       setTechnicalSheet(data.technicalSheet);
+      setPricingEstimate(data?.pricingEstimate || null);
     } catch (err: any) {
       console.log('Unexpected technical sheet error:', err);
       Alert.alert(
@@ -177,26 +256,22 @@ export default function ImageResultScreen() {
       setGenerationStep('Preparing inspiration...');
 
       const inspirationResult = await ensureInspirationAnalysis();
-
       const generated: GeneratedImage[] = [];
 
-      for (let optionIndex = 0; optionIndex < 4; optionIndex++) {
+      for (let optionIndex = 0; optionIndex < 4; optionIndex += 1) {
         setGenerationStep(`Generating Option ${optionIndex + 1} of 4...`);
 
-        const { data, error } = await supabase.functions.invoke(
-          'generate-jewelry-image',
-          {
-            body: {
-              prompt: editablePrompt || generatedPrompt,
-              designData,
-              inspirationAnalysis: inspirationResult.analysis,
-              uploadedInspirationUrls: inspirationResult.urls,
-              editInstruction,
-              mode: 'product-single',
-              optionIndex,
-            },
-          }
-        );
+        const { data, error } = await supabase.functions.invoke('generate-jewelry-image', {
+          body: {
+            prompt: editablePrompt || generatedPrompt,
+            designData,
+            inspirationAnalysis: inspirationResult.analysis,
+            uploadedInspirationUrls: inspirationResult.urls,
+            editInstruction,
+            mode: 'product-single',
+            optionIndex,
+          },
+        });
 
         if (error) {
           await handleFunctionError(error);
@@ -220,6 +295,8 @@ export default function ImageResultScreen() {
       setSelectedIndex(0);
       setLifestyleImages(new Array(generated.length).fill(null));
       setPersonalPreviewImages(new Array(generated.length).fill(null));
+      setBudgetAwareImages(new Array(generated.length).fill(null));
+      setBudgetAwareReports(new Array(generated.length).fill(null));
 
       await handleGenerateTechnicalSheet();
     } catch (err: any) {
@@ -237,28 +314,25 @@ export default function ImageResultScreen() {
 
   const handleGenerateMatchingModelPreview = async () => {
     try {
-      if (!productImages[selectedIndex]) {
+      if (!selectedImage) {
         Alert.alert('No Selected Image', 'Please generate and select a product image first.');
         return;
       }
 
       setLifestyleLoading(true);
 
-      const { data, error } = await supabase.functions.invoke(
-        'generate-jewelry-image',
-        {
-          body: {
-            prompt: editablePrompt || generatedPrompt,
-            designData,
-            inspirationAnalysis,
-            uploadedInspirationUrls,
-            editInstruction,
-            selectedBaseImage: productImages[selectedIndex].dataUrl,
-            mode: 'lifestyle',
-            optionIndex: selectedIndex,
-          },
-        }
-      );
+      const { data, error } = await supabase.functions.invoke('generate-jewelry-image', {
+        body: {
+          prompt: editablePrompt || generatedPrompt,
+          designData,
+          inspirationAnalysis,
+          uploadedInspirationUrls,
+          editInstruction,
+          selectedBaseImage: selectedImage.dataUrl,
+          mode: 'lifestyle',
+          optionIndex: selectedIndex,
+        },
+      });
 
       if (error) {
         await handleFunctionError(error);
@@ -292,7 +366,7 @@ export default function ImageResultScreen() {
 
   const handleRegenerateSelectedOption = async () => {
     try {
-      if (!productImages[selectedIndex]) {
+      if (!selectedImage) {
         Alert.alert('No Selected Image', 'Please generate and select a product image first.');
         return;
       }
@@ -304,21 +378,18 @@ export default function ImageResultScreen() {
 
       setRegenerating(true);
 
-      const { data, error } = await supabase.functions.invoke(
-        'generate-jewelry-image',
-        {
-          body: {
-            prompt: editablePrompt || generatedPrompt,
-            designData,
-            inspirationAnalysis,
-            uploadedInspirationUrls,
-            editInstruction,
-            selectedBaseImage: productImages[selectedIndex].dataUrl,
-            mode: 'regenerate-selected',
-            optionIndex: selectedIndex,
-          },
-        }
-      );
+      const { data, error } = await supabase.functions.invoke('generate-jewelry-image', {
+        body: {
+          prompt: editablePrompt || generatedPrompt,
+          designData,
+          inspirationAnalysis,
+          uploadedInspirationUrls,
+          editInstruction,
+          selectedBaseImage: selectedImage.dataUrl,
+          mode: 'regenerate-selected',
+          optionIndex: selectedIndex,
+        },
+      });
 
       if (error) {
         await handleFunctionError(error);
@@ -339,17 +410,12 @@ export default function ImageResultScreen() {
         return next;
       });
 
-      setLifestyleImages((prev) => {
-        const next = [...prev];
-        next[selectedIndex] = null;
-        return next;
-      });
+      if (data?.appliedPrompt) {
+        setEditablePrompt(data.appliedPrompt);
+        setGeneratedPrompt(data.appliedPrompt);
+      }
 
-      setPersonalPreviewImages((prev) => {
-        const next = [...prev];
-        next[selectedIndex] = null;
-        return next;
-      });
+      resetDerivedImagesForOption(selectedIndex);
     } catch (err: any) {
       console.log('Unexpected regeneration error:', err);
       Alert.alert(
@@ -361,10 +427,72 @@ export default function ImageResultScreen() {
     }
   };
 
+  const handleGenerateBudgetAwareVersion = async () => {
+    try {
+      if (!selectedImage) {
+        Alert.alert('No Selected Image', 'Please generate and select a product image first.');
+        return;
+      }
+
+      if (!hasBudget) {
+        Alert.alert('Missing Budget', 'Please add a budget in the Summary screen first.');
+        return;
+      }
+
+      setBudgetAwareLoading(true);
+
+      const { data, error } = await supabase.functions.invoke('generate-jewelry-image', {
+        body: {
+          prompt: editablePrompt || generatedPrompt,
+          designData,
+          inspirationAnalysis,
+          uploadedInspirationUrls,
+          editInstruction,
+          selectedBaseImage: selectedImage.dataUrl,
+          mode: 'budget-aware',
+          optionIndex: selectedIndex,
+        },
+      });
+
+      if (error) {
+        await handleFunctionError(error);
+        return;
+      }
+
+      if (!data?.budgetAwareImage) {
+        Alert.alert('No Image', 'No budget-aware image was returned.');
+        return;
+      }
+
+      setBudgetAwareImages((prev) => {
+        const next = [...prev];
+        next[selectedIndex] = {
+          id: `budget-aware-${selectedIndex + 1}`,
+          label: `Budget-Aware ${selectedIndex + 1}`,
+          dataUrl: data.budgetAwareImage,
+        };
+        return next;
+      });
+
+      setBudgetAwareReports((prev) => {
+        const next = [...prev];
+        next[selectedIndex] = data?.budgetAwareReport || null;
+        return next;
+      });
+    } catch (err: any) {
+      console.log('Unexpected budget-aware generation error:', err);
+      Alert.alert(
+        'Unexpected Error',
+        err?.message || 'Something went wrong while generating the budget-aware version.'
+      );
+    } finally {
+      setBudgetAwareLoading(false);
+    }
+  };
+
   const handlePickFacePhoto = async () => {
     try {
-      const permissionResult =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (!permissionResult.granted) {
         Alert.alert(
@@ -391,7 +519,7 @@ export default function ImageResultScreen() {
 
   const handleGeneratePersonalPreview = async () => {
     try {
-      if (!productImages[selectedIndex]) {
+      if (!selectedImage) {
         Alert.alert('No Selected Image', 'Please generate and select a product image first.');
         return;
       }
@@ -401,29 +529,23 @@ export default function ImageResultScreen() {
         return;
       }
 
-      const baseForPersonalPreview =
-        lifestyleImages[selectedIndex]?.dataUrl || productImages[selectedIndex].dataUrl;
-
       setPersonalPreviewLoading(true);
 
       const facePhotoDataUrl = await imageUriToDataUrl(facePhotoUri);
 
-      const { data, error } = await supabase.functions.invoke(
-        'generate-jewelry-image',
-        {
-          body: {
-            prompt: editablePrompt || generatedPrompt,
-            designData,
-            inspirationAnalysis,
-            uploadedInspirationUrls,
-            editInstruction,
-            selectedBaseImage: baseForPersonalPreview,
-            facePhotoDataUrl,
-            mode: 'personal-preview',
-            optionIndex: selectedIndex,
-          },
-        }
-      );
+      const { data, error } = await supabase.functions.invoke('generate-jewelry-image', {
+        body: {
+          prompt: editablePrompt || generatedPrompt,
+          designData,
+          inspirationAnalysis,
+          uploadedInspirationUrls,
+          editInstruction,
+          selectedBaseImage: selectedImage.dataUrl,
+          facePhotoDataUrl,
+          mode: 'personal-preview',
+          optionIndex: selectedIndex,
+        },
+      });
 
       if (error) {
         await handleFunctionError(error);
@@ -455,10 +577,6 @@ export default function ImageResultScreen() {
     }
   };
 
-  const selectedImage = productImages[selectedIndex];
-  const selectedLifestyle = lifestyleImages[selectedIndex];
-  const selectedPersonalPreview = personalPreviewImages[selectedIndex];
-
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>AI Jewelry Image Engine</Text>
@@ -483,9 +601,9 @@ export default function ImageResultScreen() {
       </View>
 
       <TouchableOpacity
-        style={[styles.primaryButton, loading && styles.disabledButton]}
+        style={[styles.primaryButton, isBusy && styles.disabledButton]}
         onPress={handleGenerateImages}
-        disabled={loading}
+        disabled={isBusy}
       >
         <Text style={styles.primaryButtonText}>
           {loading ? 'Working...' : 'Generate 4 Product Designs'}
@@ -493,9 +611,9 @@ export default function ImageResultScreen() {
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={[styles.secondaryButtonDark, lifestyleLoading && styles.disabledButton]}
+        style={[styles.secondaryButtonDark, (isBusy || !selectedImage) && styles.disabledButton]}
         onPress={handleGenerateMatchingModelPreview}
-        disabled={lifestyleLoading || !selectedImage}
+        disabled={isBusy || !selectedImage}
       >
         <Text style={styles.secondaryButtonDarkText}>
           {lifestyleLoading ? 'Generating Preview...' : 'Generate Matching Model Preview'}
@@ -503,9 +621,21 @@ export default function ImageResultScreen() {
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={[styles.secondaryButtonOutline, regenerating && styles.disabledButton]}
+        style={[styles.secondaryButtonOutline, (isBusy || !selectedImage) && styles.disabledButton]}
+        onPress={handleGenerateBudgetAwareVersion}
+        disabled={isBusy || !selectedImage}
+      >
+        <Text style={styles.secondaryButtonOutlineText}>
+          {budgetAwareLoading
+            ? 'Generating Budget-Aware Version...'
+            : 'Generate Budget-Aware Version'}
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.secondaryButtonOutline, (isBusy || !selectedImage) && styles.disabledButton]}
         onPress={handleRegenerateSelectedOption}
-        disabled={regenerating || !selectedImage}
+        disabled={isBusy || !selectedImage}
       >
         <Text style={styles.secondaryButtonOutlineText}>
           {regenerating ? 'Regenerating...' : 'Regenerate Selected Option'}
@@ -513,19 +643,16 @@ export default function ImageResultScreen() {
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={[styles.secondaryButtonOutline, technicalLoading && styles.disabledButton]}
+        style={[styles.secondaryButtonOutline, isBusy && styles.disabledButton]}
         onPress={handleGenerateTechnicalSheet}
-        disabled={technicalLoading}
+        disabled={isBusy}
       >
         <Text style={styles.secondaryButtonOutlineText}>
           {technicalLoading ? 'Generating CAD Sheet...' : 'Generate CAD / Technical Sheet'}
         </Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.secondaryNavButton}
-        onPress={() => router.push('/summary')}
-      >
+      <TouchableOpacity style={styles.secondaryNavButton} onPress={() => router.push('./summary')}>
         <Text style={styles.secondaryNavButtonText}>Edit Fields in Summary</Text>
       </TouchableOpacity>
 
@@ -554,11 +681,70 @@ export default function ImageResultScreen() {
       </View>
 
       <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Budget</Text>
+        <Text style={styles.promptText}>
+          {hasBudget
+            ? `Target budget: ${String(designData?.budget)}`
+            : 'No budget entered yet. Add a budget in Summary to enable the budget-aware version.'}
+        </Text>
+      </View>
+
+      <View style={styles.card}>
         <Text style={styles.sectionTitle}>Inspiration Analysis</Text>
         <Text style={styles.promptText}>
           {inspirationAnalysis || 'No inspiration analysis yet.'}
         </Text>
       </View>
+
+      {pricingEstimate ? (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Approximate Market Pricing</Text>
+          <Text style={styles.helperText}>
+            {pricingEstimate.country || 'Market'}{pricingEstimate.stateOrProvince ? ` / ${pricingEstimate.stateOrProvince}` : ''} · {pricingEstimate.taxLabel} · {pricingEstimate.taxRatePercent}%
+          </Text>
+
+          {pricingEstimate.lines.map((line, index) => (
+            <View key={`${line.label}-${index}`} style={styles.priceRow}>
+              <Text style={styles.priceLabel}>{line.label}</Text>
+              <Text style={styles.priceValue}>
+                {pricingEstimate.currency} {line.value.toFixed(2)}
+              </Text>
+            </View>
+          ))}
+
+          <View style={styles.priceDivider} />
+
+          <View style={styles.priceRow}>
+            <Text style={styles.priceLabelStrong}>Subtotal</Text>
+            <Text style={styles.priceValueStrong}>
+              {pricingEstimate.currency} {pricingEstimate.subtotal.toFixed(2)}
+            </Text>
+          </View>
+          <View style={styles.priceRow}>
+            <Text style={styles.priceLabelStrong}>Tax</Text>
+            <Text style={styles.priceValueStrong}>
+              {pricingEstimate.currency} {pricingEstimate.taxAmount.toFixed(2)}
+            </Text>
+          </View>
+          <View style={styles.priceRow}>
+            <Text style={styles.priceLabelStrong}>Estimated Total</Text>
+            <Text style={styles.priceValueStrong}>
+              {pricingEstimate.currency} {pricingEstimate.total.toFixed(2)}
+            </Text>
+          </View>
+
+          {pricingEstimate.targetBudget !== null ? (
+            <Text style={styles.helperText}>
+              Budget target: {pricingEstimate.currency} {pricingEstimate.targetBudget.toFixed(2)} · {pricingEstimate.isWithinBudget ? 'Within budget' : 'Above budget'}
+              {pricingEstimate.differenceToBudget !== null
+                ? ` by ${pricingEstimate.currency} ${Math.abs(pricingEstimate.differenceToBudget).toFixed(2)}`
+                : ''}
+            </Text>
+          ) : null}
+
+          <Text style={styles.disclaimerText}>{pricingEstimate.disclaimer}</Text>
+        </View>
+      ) : null}
 
       {productImages.length > 0 ? (
         <View style={styles.card}>
@@ -595,9 +781,9 @@ export default function ImageResultScreen() {
           <>
             <Image source={{ uri: facePhotoUri }} style={styles.facePreview} />
             <TouchableOpacity
-              style={[styles.primaryButton, personalPreviewLoading && styles.disabledButton]}
+              style={[styles.primaryButton, (isBusy || !selectedImage) && styles.disabledButton]}
               onPress={handleGeneratePersonalPreview}
-              disabled={personalPreviewLoading || !selectedImage}
+              disabled={isBusy || !selectedImage}
             >
               <Text style={styles.primaryButtonText}>
                 {personalPreviewLoading
@@ -633,9 +819,54 @@ export default function ImageResultScreen() {
         </View>
       ) : null}
 
-      {technicalSheet ? (
-        <TechnicalSheetCard sheet={technicalSheet} />
+      {selectedBudgetAware?.dataUrl ? (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Budget-Aware Version</Text>
+          <Image source={{ uri: selectedBudgetAware.dataUrl }} style={styles.lifestyleImage} />
+          <Text style={styles.helperText}>
+            This version is optimized to fit the entered budget while preserving the original
+            design identity.
+          </Text>
+
+          {selectedBudgetAwareReport ? (
+            <View style={styles.budgetReportBox}>
+              <Text style={styles.budgetReportTitle}>{selectedBudgetAwareReport.title}</Text>
+              <Text style={styles.budgetReportText}>
+                Target budget: {selectedBudgetAwareReport.targetBudget}
+              </Text>
+              <Text style={styles.budgetReportText}>
+                Protected design: {selectedBudgetAwareReport.protectedDesign}
+              </Text>
+              <Text style={styles.budgetReportText}>
+                {selectedBudgetAwareReport.changeSummary}
+              </Text>
+
+              {selectedBudgetAwareReport.originalEstimate ? (
+                <Text style={styles.budgetReportText}>
+                  Original estimate: {selectedBudgetAwareReport.originalEstimate.currency} {selectedBudgetAwareReport.originalEstimate.total.toFixed(2)}
+                </Text>
+              ) : null}
+              {selectedBudgetAwareReport.optimizedEstimate ? (
+                <Text style={styles.budgetReportText}>
+                  Optimized estimate: {selectedBudgetAwareReport.optimizedEstimate.currency} {selectedBudgetAwareReport.optimizedEstimate.total.toFixed(2)}
+                </Text>
+              ) : null}
+
+              {selectedBudgetAwareReport.changes.map((change, index) => (
+                <View key={`${change.title}-${index}`} style={styles.changeBulletRow}>
+                  <Text style={styles.changeBulletIcon}>•</Text>
+                  <View style={styles.changeBulletContent}>
+                    <Text style={styles.changeBulletTitle}>{change.title}</Text>
+                    <Text style={styles.changeBulletText}>{change.detail}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
       ) : null}
+
+      {technicalSheet ? <TechnicalSheetCard sheet={technicalSheet} /> : null}
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Design Snapshot</Text>
@@ -649,11 +880,14 @@ export default function ImageResultScreen() {
         <Text style={styles.item}>Shape: {designData.shape || '—'}</Text>
         <Text style={styles.item}>Ring Size: {designData.ringSize || '—'}</Text>
         <Text style={styles.item}>Center Stone Carat: {designData.centerStoneCarat || '—'}</Text>
-        <Text style={styles.item}>Side Stone Total Carat: {designData.sideStoneTotalCarat || '—'}</Text>
+        <Text style={styles.item}>
+          Side Stone Total Carat: {designData.sideStoneTotalCarat || '—'}
+        </Text>
         <Text style={styles.item}>Side Stone Count: {designData.sideStoneCount || '—'}</Text>
         <Text style={styles.item}>Prong Count: {designData.prongCount || '—'}</Text>
         <Text style={styles.item}>Band Width (mm): {designData.bandWidthMm || '—'}</Text>
         <Text style={styles.item}>Setting Style: {designData.settingStyle || '—'}</Text>
+        <Text style={styles.item}>Budget: {designData.budget || '—'}</Text>
         <Text style={styles.item}>Outfit Type: {designData.outfitType || '—'}</Text>
         <Text style={styles.item}>Outfit Color: {designData.outfitColor || '—'}</Text>
         <Text style={styles.item}>Model Preview: {designData.wantsModelPreview || '—'}</Text>
@@ -843,5 +1077,90 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#111',
     textAlign: 'center',
+  },
+  priceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 10,
+  },
+  priceLabel: {
+    flex: 1,
+    fontSize: 14,
+    color: '#444',
+    lineHeight: 20,
+  },
+  priceValue: {
+    fontSize: 14,
+    color: '#111',
+    fontWeight: '600',
+  },
+  priceLabelStrong: {
+    flex: 1,
+    fontSize: 15,
+    color: '#111',
+    fontWeight: '700',
+  },
+  priceValueStrong: {
+    fontSize: 15,
+    color: '#111',
+    fontWeight: '700',
+  },
+  priceDivider: {
+    height: 1,
+    backgroundColor: '#ececec',
+    marginVertical: 8,
+  },
+  disclaimerText: {
+    marginTop: 12,
+    fontSize: 12,
+    color: '#777',
+    lineHeight: 18,
+  },
+  budgetReportBox: {
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: '#ece7dc',
+    borderRadius: 12,
+    padding: 14,
+    backgroundColor: '#faf7f1',
+  },
+  budgetReportTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111',
+    marginBottom: 8,
+  },
+  budgetReportText: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 21,
+    marginBottom: 6,
+  },
+  changeBulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 10,
+  },
+  changeBulletIcon: {
+    fontSize: 18,
+    lineHeight: 20,
+    marginRight: 8,
+    color: '#111',
+  },
+  changeBulletContent: {
+    flex: 1,
+  },
+  changeBulletTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111',
+    marginBottom: 2,
+  },
+  changeBulletText: {
+    fontSize: 13,
+    color: '#444',
+    lineHeight: 19,
   },
 });
