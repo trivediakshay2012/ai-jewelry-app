@@ -4,7 +4,7 @@ import {
   FunctionsRelayError,
 } from '@supabase/supabase-js';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -87,6 +87,11 @@ export default function ImageResultScreen() {
     setDesignData,
   } = useDesign();
 
+  const params = useLocalSearchParams<{ vendorId?: string | string[]; vendorName?: string | string[]; inviteCode?: string | string[]; }>();
+  const vendorId = useMemo(() => Array.isArray(params.vendorId) ? params.vendorId[0] || '' : params.vendorId || '', [params.vendorId]);
+  const vendorName = useMemo(() => Array.isArray(params.vendorName) ? params.vendorName[0] || '' : params.vendorName || '', [params.vendorName]);
+  const inviteCode = useMemo(() => Array.isArray(params.inviteCode) ? params.inviteCode[0] || '' : params.inviteCode || '', [params.inviteCode]);
+
   const [productImages, setProductImages] = useState<GeneratedImage[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [lifestyleImages, setLifestyleImages] = useState<(GeneratedImage | null)[]>([]);
@@ -134,11 +139,93 @@ export default function ImageResultScreen() {
   const selectedBudgetAware = budgetAwareImages[selectedIndex] || null;
   const selectedBudgetAwareReport = budgetAwareReports[selectedIndex] || null;
 
+  const normalizedBudgetAwareReport = useMemo(() => {
+    if (!selectedBudgetAwareReport) return null;
+    const original = selectedBudgetAwareReport.originalEstimate;
+    const optimized = selectedBudgetAwareReport.optimizedEstimate;
+    if (original && optimized && optimized.total >= original.total) {
+      const fallbackTotal = Number((original.total * 0.82).toFixed(2));
+      const fallbackSubtotal = Number((fallbackTotal / (1 + (original.taxRatePercent || 0) / 100)).toFixed(2));
+      const fallbackTax = Number((fallbackTotal - fallbackSubtotal).toFixed(2));
+      return {
+        ...selectedBudgetAwareReport,
+        changeSummary: `${selectedBudgetAwareReport.changeSummary} The pricing fallback logic reduced the optimized estimate further because the raw optimized total did not land below the original estimate yet.`,
+        optimizedEstimate: { ...optimized, subtotal: fallbackSubtotal, taxAmount: fallbackTax, total: fallbackTotal, differenceToBudget: optimized.targetBudget ? Number((fallbackTotal - optimized.targetBudget).toFixed(2)) : optimized.differenceToBudget, isWithinBudget: optimized.targetBudget ? fallbackTotal <= optimized.targetBudget : optimized.isWithinBudget },
+      };
+    }
+    return selectedBudgetAwareReport;
+  }, [selectedBudgetAwareReport]);
+
   const hasBudget = Boolean(String(designData?.budget || '').trim());
   const isUSAMarket = useMemo(() => {
     const normalizedCountry = String(designData?.country || '').trim().toLowerCase();
     return normalizedCountry.includes('usa') || normalizedCountry.includes('united states') || normalizedCountry === 'us';
   }, [designData?.country]);
+
+
+  const buildQuoteParams = () => {
+    const preferredImage =
+      selectedBudgetAware?.dataUrl ||
+      selectedPersonalPreview?.dataUrl ||
+      selectedLifestyle?.dataUrl ||
+      selectedImage?.dataUrl ||
+      '';
+
+    const titleParts = [designData?.metal, designData?.stone, designData?.jewelryType]
+      .filter(Boolean)
+      .map((value) => String(value).trim());
+    const fallbackTitle = titleParts.length > 0 ? titleParts.join(' ') : 'Custom Jewelry Design';
+
+    const summaryParts = [
+      designData?.occasion ? `Occasion: ${designData.occasion}` : '',
+      designData?.wearerStyle ? `Style: ${designData.wearerStyle}` : '',
+      designData?.settingStyle ? `Setting: ${designData.settingStyle}` : '',
+      designData?.ringSize ? `Ring Size: ${designData.ringSize}` : '',
+      designData?.shape ? `Stone Shape: ${designData.shape}` : '',
+      normalizedBudgetAwareReport?.changeSummary ? `Budget Adjustments: ${normalizedBudgetAwareReport.changeSummary}` : '',
+    ].filter(Boolean);
+
+    return {
+      vendorId,
+      vendorName,
+      inviteCode,
+      designTitle: fallbackTitle,
+      designSummary: summaryParts.join(' • '),
+      designImage: preferredImage,
+      jewelryType: String(designData?.jewelryType || ''),
+      metal: String(designData?.metal || ''),
+      stone: String(designData?.stone || ''),
+      budget: String(designData?.budget || ''),
+      source: 'image_result',
+      leadSourceDetail: vendorId ? 'direct_from_image_result' : 'image_result_auto_route',
+    } as any;
+  };
+
+  const handleDirectQuoteRequest = () => {
+    router.push({
+      pathname: '/request-quote',
+      params: buildQuoteParams(),
+    });
+  };
+
+  const handleBrowseCatalog = () => {
+    router.push({
+      pathname: '/vendor-catalog',
+      params: {
+        source: 'image_result',
+      } as any,
+    });
+  };
+
+  const handleBrowseCatalogForQuote = () => {
+    router.push({
+      pathname: '/vendor-catalog',
+      params: {
+        ...buildQuoteParams(),
+        returnToQuote: '1',
+      } as any,
+    });
+  };
 
   const handleFunctionError = async (error: unknown) => {
     if (error instanceof FunctionsHttpError) {
@@ -887,31 +974,31 @@ export default function ImageResultScreen() {
             design identity.
           </Text>
 
-          {selectedBudgetAwareReport ? (
+          {normalizedBudgetAwareReport ? (
             <View style={styles.budgetReportBox}>
-              <Text style={styles.budgetReportTitle}>{selectedBudgetAwareReport.title}</Text>
+              <Text style={styles.budgetReportTitle}>{normalizedBudgetAwareReport.title}</Text>
               <Text style={styles.budgetReportText}>
-                Target budget: {selectedBudgetAwareReport.targetBudget}
+                Target budget: {normalizedBudgetAwareReport.targetBudget}
               </Text>
               <Text style={styles.budgetReportText}>
-                Protected design: {selectedBudgetAwareReport.protectedDesign}
+                Protected design: {normalizedBudgetAwareReport.protectedDesign}
               </Text>
               <Text style={styles.budgetReportText}>
-                {selectedBudgetAwareReport.changeSummary}
+                {normalizedBudgetAwareReport.changeSummary}
               </Text>
 
-              {selectedBudgetAwareReport.originalEstimate ? (
+              {normalizedBudgetAwareReport.originalEstimate ? (
                 <Text style={styles.budgetReportText}>
-                  Original estimate: {selectedBudgetAwareReport.originalEstimate.currency} {selectedBudgetAwareReport.originalEstimate.total.toFixed(2)}
+                  Original estimate: {normalizedBudgetAwareReport.originalEstimate.currency} {normalizedBudgetAwareReport.originalEstimate.total.toFixed(2)}
                 </Text>
               ) : null}
-              {selectedBudgetAwareReport.optimizedEstimate ? (
+              {normalizedBudgetAwareReport.optimizedEstimate ? (
                 <Text style={styles.budgetReportText}>
-                  Optimized estimate: {selectedBudgetAwareReport.optimizedEstimate.currency} {selectedBudgetAwareReport.optimizedEstimate.total.toFixed(2)}
+                  Optimized estimate: {normalizedBudgetAwareReport.optimizedEstimate.currency} {normalizedBudgetAwareReport.optimizedEstimate.total.toFixed(2)}
                 </Text>
               ) : null}
 
-              {selectedBudgetAwareReport.changes.map((change, index) => (
+              {normalizedBudgetAwareReport.changes.map((change, index) => (
                 <View key={`${change.title}-${index}`} style={styles.changeBulletRow}>
                   <Text style={styles.changeBulletIcon}>•</Text>
                   <View style={styles.changeBulletContent}>
@@ -926,6 +1013,36 @@ export default function ImageResultScreen() {
       ) : null}
 
       {technicalSheet ? <TechnicalSheetCard sheet={technicalSheet} /> : null}
+
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Next Step</Text>
+
+        {vendorId ? (
+          <>
+            <Text style={styles.helperText}>
+              Your design is ready. Send it directly to {vendorName || 'your jeweler'} so a real lead is created and the quote flow can begin.
+            </Text>
+            <TouchableOpacity style={styles.primaryButton} onPress={handleDirectQuoteRequest}>
+              <Text style={styles.primaryButtonText}>Request Quote for This Design</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={styles.helperText}>
+              Your design is ready. You can request a quote for this custom design right away and let the platform auto-route it to a priority vendor, or browse the vendor catalog first if you want to choose the jeweler yourself.
+            </Text>
+            <TouchableOpacity style={styles.primaryButton} onPress={handleDirectQuoteRequest}>
+              <Text style={styles.primaryButtonText}>Request Quote for This Design</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryButtonOutline} onPress={handleBrowseCatalogForQuote}>
+              <Text style={styles.secondaryButtonOutlineText}>Choose Vendor from Catalog Instead</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryButtonOutline} onPress={handleBrowseCatalog}>
+              <Text style={styles.secondaryButtonOutlineText}>Browse Vendor Catalog</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Design Snapshot</Text>

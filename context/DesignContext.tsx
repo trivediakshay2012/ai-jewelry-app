@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState } from 'react';
 import { getQuestionText, getQuestionsForDesign } from '../lib/designSchema';
 import { getCurrencyForCountry } from '../lib/jewelryFlow';
+import { LockedDesign, createLockedDesign } from '../lib/designLock';
 import { VendorStockItem } from '../lib/vendorInventory';
 
 export type DesignData = {
@@ -82,6 +83,9 @@ type DesignContextType = {
   setVendorInspirationItem: React.Dispatch<React.SetStateAction<VendorStockItem | null>>;
   applyVendorInspiration: (item: VendorStockItem) => void;
   addToCart: (item: VendorStockItem) => void;
+  lockedDesign: LockedDesign | null;
+  setLockedDesign: React.Dispatch<React.SetStateAction<LockedDesign | null>>;
+  refreshLockedDesign: (next?: DesignData) => void;
   resetDesign: () => void;
 };
 
@@ -157,6 +161,7 @@ export function DesignProvider({ children }: { children: React.ReactNode }) {
   const [facePhotoUri, setFacePhotoUri] = useState<string | null>(null);
   const [cartItems, setCartItems] = useState<VendorStockItem[]>([]);
   const [vendorInspirationItem, setVendorInspirationItem] = useState<VendorStockItem | null>(null);
+  const [lockedDesign, setLockedDesign] = useState<LockedDesign | null>(null);
 
   const addToCart = (item: VendorStockItem) => {
     setCartItems((prev) => (prev.find((entry) => entry.id === item.id) ? prev : [...prev, item]));
@@ -185,6 +190,7 @@ export function DesignProvider({ children }: { children: React.ReactNode }) {
     const nextQuestions = getQuestionsForDesign(nextData);
     const nextIndex = nextQuestions.findIndex((itemQuestion) => !nextData[itemQuestion.key]);
     setVendorInspirationItem(item);
+    setLockedDesign(createLockedDesign(nextData));
     setDesignData(nextData);
     setMessages([
       {
@@ -208,6 +214,11 @@ export function DesignProvider({ children }: { children: React.ReactNode }) {
     setFacePhotoUri(null);
   };
 
+  const refreshLockedDesign = (next?: DesignData) => {
+    const source = next || designData;
+    setLockedDesign(createLockedDesign(source));
+  };
+
   const resetDesign = () => {
     setDesignData(initialDesignData);
     setMessages(initialMessages);
@@ -217,6 +228,7 @@ export function DesignProvider({ children }: { children: React.ReactNode }) {
     setInspirationAnalysis('');
     setFacePhotoUri(null);
     setVendorInspirationItem(null);
+    setLockedDesign(null);
   };
 
   return (
@@ -242,6 +254,9 @@ export function DesignProvider({ children }: { children: React.ReactNode }) {
         setVendorInspirationItem,
         applyVendorInspiration,
         addToCart,
+        lockedDesign,
+        setLockedDesign,
+        refreshLockedDesign,
         resetDesign,
       }}
     >

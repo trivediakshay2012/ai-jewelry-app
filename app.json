@@ -1,20 +1,22 @@
 {
   "expo": {
-    "name": "ai-jewelry-app",
-    "slug": "ai-jewelry-app",
+    "name": "Aurra",
+    "slug": "aurra",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "aijewelryapp",
+    "scheme": "aurra",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.aurra.app"
     },
     "android": {
+      "package": "com.aurra.app",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundColor": "#000000",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
@@ -23,7 +25,8 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "Aurra"
     },
     "plugins": [
       "expo-router",
@@ -31,9 +34,9 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
+          "imageWidth": 220,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#000000",
           "dark": {
             "backgroundColor": "#000000"
           }
@@ -43,6 +46,10 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "brandName": "Aurra",
+      "tagline": "Design jewelry your way"
     }
   }
 }

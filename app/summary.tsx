@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo } from 'react';
 import {
   Image,
@@ -78,10 +78,16 @@ export default function SummaryScreen() {
     setDesignData,
     generatedPrompt,
     setGeneratedPrompt,
+    refreshLockedDesign,
     resetDesign,
     inspirationImages,
     inspirationAnalysis,
   } = useDesign();
+
+  const params = useLocalSearchParams<{ vendorId?: string | string[]; vendorName?: string | string[]; inviteCode?: string | string[] }>();
+  const vendorId = Array.isArray(params.vendorId) ? params.vendorId[0] || '' : params.vendorId || '';
+  const vendorName = Array.isArray(params.vendorName) ? params.vendorName[0] || '' : params.vendorName || '';
+  const inviteCode = Array.isArray(params.inviteCode) ? params.inviteCode[0] || '' : params.inviteCode || '';
 
   const updateField = (key: keyof DesignData, value: string) => {
     setDesignData((prev) => {
@@ -294,11 +300,51 @@ export default function SummaryScreen() {
 
   useEffect(() => {
     setGeneratedPrompt(imagePrompt);
-  }, [imagePrompt, setGeneratedPrompt]);
+    refreshLockedDesign(designData);
+  }, [imagePrompt, setGeneratedPrompt, refreshLockedDesign, designData]);
 
   const handleStartOver = () => {
     resetDesign();
     router.replace('/chat');
+  };
+
+  const handleRequestQuote = () => {
+    router.push({
+      pathname: '/request-quote',
+      params: {
+        vendorId,
+        vendorName,
+        inviteCode,
+        designTitle: `${designData.jewelryType || 'Custom Jewelry'} Design`,
+        designSummary: designBrief,
+        jewelryType: designData.jewelryType || '',
+        metal: `${designData.metalPurity ? `${designData.metalPurity} ` : ''}${designData.metal || ''}`.trim(),
+        stone: `${designData.shape ? `${designData.shape} ` : ''}${designData.stone || ''}`.trim(),
+        budget: designData.budget || '',
+        source: vendorId ? 'invite_link' : 'custom_design_direct_quote',
+        leadSourceDetail: vendorId ? 'summary_direct_vendor_quote' : 'summary_auto_route_quote',
+      },
+    } as any);
+  };
+
+  const handleChooseVendorFromCatalog = () => {
+    router.push({
+      pathname: '/vendor-catalog',
+      params: {
+        returnToQuote: '1',
+        vendorId,
+        vendorName,
+        inviteCode,
+        designTitle: `${designData.jewelryType || 'Custom Jewelry'} Design`,
+        designSummary: designBrief,
+        jewelryType: designData.jewelryType || '',
+        metal: `${designData.metalPurity ? `${designData.metalPurity} ` : ''}${designData.metal || ''}`.trim(),
+        stone: `${designData.shape ? `${designData.shape} ` : ''}${designData.stone || ''}`.trim(),
+        budget: designData.budget || '',
+        source: 'custom_design_vendor_selection',
+        leadSourceDetail: 'summary_choose_vendor_from_catalog',
+      },
+    } as any);
   };
 
   return (
@@ -373,7 +419,25 @@ export default function SummaryScreen() {
         <Text style={styles.promptText}>{generatedPrompt || 'No prompt generated yet.'}</Text>
       </View>
 
-      <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/image-result')}>
+
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Quote Options</Text>
+        <Text style={styles.description}>
+          {vendorId
+            ? `This design can be sent directly to ${vendorName || 'your jeweler'} for a quote right now.`
+            : 'You can request a quote for this custom design right now with platform priority routing, or choose a vendor from catalog yourself first.'}
+        </Text>
+        <TouchableOpacity style={styles.primaryButton} onPress={handleRequestQuote}>
+          <Text style={styles.primaryButtonText}>{vendorId ? 'Request Quote for This Design' : 'Request Quote for This Design'}</Text>
+        </TouchableOpacity>
+        {!vendorId ? (
+          <TouchableOpacity style={styles.secondaryButton} onPress={handleChooseVendorFromCatalog}>
+            <Text style={styles.secondaryButtonText}>Choose Vendor from Catalog Instead</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      <TouchableOpacity style={styles.primaryButton} onPress={() => router.push({ pathname: '/image-result', params: { vendorId, vendorName, inviteCode } } as any)}>
         <Text style={styles.primaryButtonText}>Continue to Image Generation</Text>
       </TouchableOpacity>
 
