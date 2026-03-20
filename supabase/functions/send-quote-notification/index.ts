@@ -20,7 +20,6 @@ type NotificationInsertInput = {
   body: string
   referenceId?: string | null
   recipientEmail?: string | null
-  recipientPhone?: string | null
   vendorId?: string | null
   metadata?: Record<string, unknown>
 }
@@ -81,7 +80,6 @@ async function insertNotification(input: NotificationInsertInput) {
     reference_type: 'vendor_quote',
     reference_id: input.referenceId || null,
     recipient_email: input.recipientEmail || null,
-    recipient_phone: input.recipientPhone || null,
     recipient_vendor_id: input.vendorId || null,
     metadata: input.metadata || null,
     status: 'unread',
@@ -187,7 +185,9 @@ Deno.serve(async (req) => {
     const quoteId = body.quoteId ? String(body.quoteId) : null
     const vendorId = body.vendorId ? String(body.vendorId) : null
     const depositAmount = quoteAmount * (depositPercent / 100)
-    const reviewUrl = leadId ? `${appBaseUrl}/my-quotes?leadId=${encodeURIComponent(leadId)}` : `${appBaseUrl}/my-quotes`
+    const reviewUrl = leadId
+      ? `${appBaseUrl}/my-quotes?leadId=${encodeURIComponent(leadId)}`
+      : `${appBaseUrl}/my-quotes`
 
     const title = 'Your Aurra jewelry quote is ready'
     const message = `Your quote for ${designTitle} is ready at ${moneyLabel(quoteAmount)}. Deposit due now: ${moneyLabel(depositAmount)}. Timeline: ${timeline}.`
@@ -198,7 +198,6 @@ Deno.serve(async (req) => {
       body: message,
       referenceId: quoteId || leadId,
       recipientEmail: customerEmail || null,
-      recipientPhone: customerPhone || null,
       vendorId,
       metadata: {
         leadId,
@@ -254,7 +253,7 @@ Deno.serve(async (req) => {
     }
 
     return jsonResponse({
-      ok: emailSent || smsSent || inApp.ok,
+      ok: emailSent || inApp.ok,
       emailSent,
       smsSent,
       inAppInserted: inApp.ok,

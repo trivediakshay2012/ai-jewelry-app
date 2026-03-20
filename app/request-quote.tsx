@@ -1,6 +1,15 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { rankVendorsForLead } from '../lib/leadPrioritization';
 import { createLocalLead } from '../lib/localWorkflowStore';
 import { createNotificationEvent } from '../lib/notificationEvents';
@@ -35,6 +44,16 @@ function showMessage(title: string, message: string, onDone?: () => void) {
   }
 
   Alert.alert(title, message, [{ text: 'OK', onPress: () => onDone?.() }]);
+}
+
+function parseOptionalJson(value: any) {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(String(value));
+  } catch {
+    return null;
+  }
 }
 
 export default function RequestQuoteScreen() {
@@ -92,6 +111,20 @@ export default function RequestQuoteScreen() {
     [params.catalogItemTitle]
   );
 
+  const designImages = useMemo(() => {
+    const raw =
+      Array.isArray(params.designImages) ? params.designImages[0] : params.designImages;
+    const parsed = parseOptionalJson(raw);
+    if (Array.isArray(parsed)) return parsed.filter(Boolean);
+    return designImage ? [designImage] : [];
+  }, [params.designImages, designImage]);
+
+  const selectedSpecs = useMemo(() => {
+    const raw =
+      Array.isArray(params.selectedSpecs) ? params.selectedSpecs[0] : params.selectedSpecs;
+    return parseOptionalJson(raw);
+  }, [params.selectedSpecs]);
+
   const [vendorDirectory, setVendorDirectory] = useState<VendorDirectoryRow[]>([]);
   const [loadingVendors, setLoadingVendors] = useState(true);
   const [routingMode, setRoutingMode] = useState<RoutingMode>(
@@ -110,7 +143,10 @@ export default function RequestQuoteScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   const approvedManualVendors = useMemo(
-    () => vendorDirectory.filter((vendor) => vendor.is_onboarded !== false && vendor.is_suspended !== true),
+    () =>
+      vendorDirectory.filter(
+        (vendor) => vendor.is_onboarded !== false && vendor.is_suspended !== true
+      ),
     [vendorDirectory]
   );
 
@@ -123,7 +159,9 @@ export default function RequestQuoteScreen() {
 
         const { data } = await supabase
           .from('vendors')
-          .select('id, business_name, invite_code, email, subscription_plan, is_onboarded, is_suspended, is_featured');
+          .select(
+            'id, business_name, invite_code, email, subscription_plan, is_onboarded, is_suspended, is_featured'
+          );
 
         if (active) {
           setVendorDirectory((data || []) as VendorDirectoryRow[]);
@@ -154,7 +192,9 @@ export default function RequestQuoteScreen() {
 
     const normalizedVendorName = normalizeText(vendorName);
     const matched =
-      vendorDirectory.find((vendor) => normalizeText(vendor.business_name) === normalizedVendorName) || null;
+      vendorDirectory.find(
+        (vendor) => normalizeText(vendor.business_name) === normalizedVendorName
+      ) || null;
 
     if (matched) {
       setResolvedVendorId(matched.id);
@@ -201,12 +241,17 @@ export default function RequestQuoteScreen() {
 
       setSubmitting(true);
 
+      const normalizedEmail = customerEmail.trim().toLowerCase();
+      const normalizedName = customerName.trim();
+      const normalizedPhone = customerPhone.trim() || undefined;
+      const resolvedTitle = designTitle || catalogItemTitle || 'Jewelry Quote Request';
+
       const payload = {
         vendorId: resolvedVendorId,
-        customerName: customerName.trim(),
-        customerEmail: customerEmail.trim().toLowerCase(),
-        customerPhone: customerPhone.trim() || undefined,
-        designTitle: designTitle || catalogItemTitle || 'Jewelry Quote Request',
+        customerName: normalizedName,
+        customerEmail: normalizedEmail,
+        customerPhone: normalizedPhone,
+        designTitle: resolvedTitle,
         designSummary: designSummary || undefined,
         designImage: designImage || undefined,
         budget: budget ? Number(budget) : null,
@@ -220,6 +265,8 @@ export default function RequestQuoteScreen() {
         catalogItemTitle: catalogItemTitle || undefined,
         assignedVendorName: resolvedVendorName || undefined,
         inviteCode: resolvedInviteCode || undefined,
+        designImages,
+        selectedSpecs,
       };
 
       const savedLead = await saveLead(payload as any);
@@ -228,12 +275,12 @@ export default function RequestQuoteScreen() {
         await createLocalLead({
           vendor_id: resolvedVendorId || null,
           invite_code: resolvedInviteCode || null,
-          customer_name: customerName.trim(),
-          customer_email: customerEmail.trim().toLowerCase(),
-          customer_phone: customerPhone.trim() || null,
-          design_title: designTitle || catalogItemTitle || 'Jewelry Quote Request',
+          customer_name: normalizedName,
+          customer_email: normalizedEmail,
+          customer_phone: normalizedPhone || null,
+          design_title: resolvedTitle,
           design_summary: designSummary || null,
-          design_image: designImage || null,
+          design_image: designImage || designImages[0] || null,
           jewelry_type: jewelryType || null,
           metal: metal || null,
           stone: stone || null,
@@ -242,10 +289,9 @@ export default function RequestQuoteScreen() {
           notes: notes.trim() || null,
           status: 'submitted',
           source,
-          routing_mode: routingMode,
           assigned_vendor_name: resolvedVendorName || null,
           backend_mode: 'supabase',
-        });
+        } as any);
       } catch (localError) {
         console.log('Local lead mirror skipped:', localError);
       }
@@ -253,15 +299,32 @@ export default function RequestQuoteScreen() {
       createNotificationEvent({
         audience: 'vendor',
         title: 'New lead received',
-        body: `${customerName.trim()} submitted a quote request${designTitle ? ` for ${designTitle}` : ''}.`,
+        body: `${normalizedName} submitted a quote request${resolvedTitle ? ` for ${resolvedTitle}` : ''}.`,
         recipientVendorId: resolvedVendorId,
         recipientEmail: null,
         referenceType: 'vendor_lead',
         referenceId: savedLead?.id || null,
         metadata: {
-          routingMode,
-          jewelryType: jewelryType || null,
-          leadId: savedLead?.id || null,
+          lead_id: savedLead?.id || null,
+          customer_name: normalizedName,
+          customer_email: normalizedEmail,
+          customer_phone: normalizedPhone || null,
+          design_title: resolvedTitle,
+          design_summary: designSummary || null,
+          design_image: designImage || null,
+          design_images: designImages.length ? designImages : null,
+          jewelry_type: jewelryType || null,
+          metal: metal || null,
+          stone: stone || null,
+          budget: budget ? Number(budget) : null,
+          timeline: timeline.trim() || null,
+          notes: notes.trim() || null,
+          source,
+          routing_mode: routingMode,
+          assigned_vendor_name: resolvedVendorName || null,
+          invite_code: resolvedInviteCode || null,
+          selected_specs: selectedSpecs || null,
+          status: 'submitted',
         },
       }).catch((e) => console.log('vendor notification skipped', e));
 
@@ -272,8 +335,8 @@ export default function RequestQuoteScreen() {
           router.replace({
             pathname: '/my-quotes',
             params: {
-              customerEmail: customerEmail.trim().toLowerCase(),
-              customerName: customerName.trim(),
+              customerEmail: normalizedEmail,
+              customerName: normalizedName,
             },
           } as any)
       );
@@ -286,134 +349,190 @@ export default function RequestQuoteScreen() {
   };
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Request Quote</Text>
+    <ScrollView contentContainerStyle={styles.container}>
+      <Text style={styles.eyebrow}>REQUEST A QUOTE</Text>
+      <Text style={styles.title}>Send your design to a vendor</Text>
       <Text style={styles.subtitle}>
-        {resolvedVendorName ? `Send your design directly to ${resolvedVendorName}.` : 'Send your design to a jeweler for review and quote.'}
+        Share your contact details, timeline, and any notes so the vendor can respond with pricing.
       </Text>
 
-      <View style={styles.routingCard}>
-        <Text style={styles.routingTitle}>How should this request be routed?</Text>
-
-        <TouchableOpacity
-          style={[styles.routingOption, routingMode === 'platform_priority' && styles.routingOptionActive]}
-          onPress={() => setRoutingMode('platform_priority')}
-        >
-          <Text style={styles.routingOptionTitle}>Auto-route to priority vendor</Text>
-          <Text style={styles.routingOptionText}>Best for platform-driven lead routing.</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.routingOption, routingMode === 'customer_selected' && styles.routingOptionActive]}
-          onPress={() => setRoutingMode('customer_selected')}
-        >
-          <Text style={styles.routingOptionTitle}>I want to choose the vendor myself</Text>
-          <Text style={styles.routingOptionText}>Use when the customer wants a specific jeweler.</Text>
-        </TouchableOpacity>
+      <View style={styles.card}>
+        <Text style={styles.label}>Design</Text>
+        <Text style={styles.value}>{designTitle || catalogItemTitle || 'Custom jewelry request'}</Text>
+        {!!designSummary && <Text style={styles.mutedText}>{designSummary}</Text>}
+        <Text style={styles.meta}>
+          Type: {jewelryType || 'Not specified'} • Metal: {metal || 'Not specified'} • Stone: {stone || 'Not specified'}
+        </Text>
+        {!!budget && <Text style={styles.meta}>Budget: ${budget}</Text>}
+        {designImages.length > 0 ? (
+          <Text style={styles.meta}>Reference images attached: {designImages.length}</Text>
+        ) : null}
       </View>
 
-      {routingMode === 'customer_selected' && approvedManualVendors.length > 0 ? (
-        <View style={styles.vendorPickerCard}>
-          <Text style={styles.routingTitle}>Approved vendors</Text>
-          {approvedManualVendors.slice(0, 8).map((vendor) => (
-            <TouchableOpacity
-              key={vendor.id}
-              style={[styles.vendorChip, resolvedVendorId === vendor.id && styles.vendorChipActive]}
-              onPress={() => chooseSpecificVendor(vendor)}
-            >
-              <Text style={styles.vendorChipTitle}>{vendor.business_name}</Text>
-              <Text style={styles.vendorChipText}>
-                {vendor.subscription_plan || 'basic'}
-                {vendor.is_featured ? ' • featured' : ''}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      ) : null}
+      <View style={styles.vendorPickerCard}>
+        <Text style={styles.label}>Vendor routing</Text>
+        <Text style={styles.mutedText}>
+          {routingMode === 'customer_selected'
+            ? 'You selected a specific vendor.'
+            : 'Aurra matched your request to the highest-priority vendor.'}
+        </Text>
 
-      {!!designTitle ? <Text style={styles.snapshot}>Design: {designTitle}</Text> : null}
-      {!!catalogItemTitle ? <Text style={styles.snapshot}>Catalog Item: {catalogItemTitle}</Text> : null}
-      {!!jewelryType ? <Text style={styles.snapshot}>Type: {jewelryType}</Text> : null}
-      {!!metal ? <Text style={styles.snapshot}>Metal: {metal}</Text> : null}
-      {!!stone ? <Text style={styles.snapshot}>Stone: {stone}</Text> : null}
-      {!!budget ? <Text style={styles.snapshot}>Budget: {budget}</Text> : null}
+        <TouchableOpacity
+          style={[
+            styles.vendorChip,
+            routingMode === 'platform_priority' && !vendorIdParam ? styles.vendorChipActive : null,
+          ]}
+          onPress={() => setRoutingMode('platform_priority')}
+        >
+          <Text style={styles.vendorChipTitle}>Aurra priority routing</Text>
+          <Text style={styles.vendorChipText}>
+            Best available vendor match for your jewelry type.
+          </Text>
+        </TouchableOpacity>
 
-      <TextInput style={styles.input} placeholder="Full name" value={customerName} onChangeText={setCustomerName} />
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        autoCapitalize="none"
-        keyboardType="email-address"
-        value={customerEmail}
-        onChangeText={setCustomerEmail}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Phone number"
-        keyboardType="phone-pad"
-        value={customerPhone}
-        onChangeText={setCustomerPhone}
-      />
-      <TextInput style={styles.input} placeholder="Preferred timeline" value={timeline} onChangeText={setTimeline} />
-      <TextInput
-        style={[styles.input, styles.multiline]}
-        placeholder="Notes"
-        multiline
-        numberOfLines={6}
-        textAlignVertical="top"
-        value={notes}
-        onChangeText={setNotes}
-      />
+        {approvedManualVendors.map((vendor) => (
+          <TouchableOpacity
+            key={vendor.id}
+            style={[
+              styles.vendorChip,
+              resolvedVendorId === vendor.id && routingMode === 'customer_selected'
+                ? styles.vendorChipActive
+                : null,
+            ]}
+            onPress={() => chooseSpecificVendor(vendor)}
+          >
+            <Text style={styles.vendorChipTitle}>{vendor.business_name}</Text>
+            <Text style={styles.vendorChipText}>
+              {vendor.is_featured ? 'Featured vendor' : 'Approved vendor'}
+            </Text>
+          </TouchableOpacity>
+        ))}
+
+        <Text style={styles.meta}>
+          Selected vendor: {resolvedVendorName || 'No vendor selected yet'}
+        </Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.label}>Your details</Text>
+
+        <TextInput
+          value={customerName}
+          onChangeText={setCustomerName}
+          placeholder="Your full name"
+          style={styles.input}
+        />
+
+        <TextInput
+          value={customerEmail}
+          onChangeText={setCustomerEmail}
+          placeholder="Your email"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          style={styles.input}
+        />
+
+        <TextInput
+          value={customerPhone}
+          onChangeText={setCustomerPhone}
+          placeholder="Your phone number"
+          keyboardType="phone-pad"
+          style={styles.input}
+        />
+
+        <TextInput
+          value={timeline}
+          onChangeText={setTimeline}
+          placeholder="Preferred timeline"
+          style={styles.input}
+        />
+
+        <TextInput
+          value={notes}
+          onChangeText={setNotes}
+          placeholder="Anything the vendor should know?"
+          multiline
+          style={[styles.input, styles.multiline]}
+        />
+      </View>
 
       <TouchableOpacity
-        style={[styles.primaryButton, submitting && { opacity: 0.7 }]}
+        style={[styles.primaryButton, submitting && { opacity: 0.65 }]}
         onPress={handleSubmit}
-        disabled={submitting || loadingVendors}
+        disabled={submitting}
       >
-        <Text style={styles.primaryButtonText}>{submitting ? 'Submitting...' : 'Send Quote Request'}</Text>
+        <Text style={styles.primaryButtonText}>
+          {submitting ? 'Submitting...' : 'Submit Quote Request'}
+        </Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/vendor-catalog' as any)}>
-        <Text style={styles.secondaryButtonText}>Back to Vendor Catalog</Text>
+      <TouchableOpacity
+        style={styles.secondaryButton}
+        onPress={() => router.back()}
+        disabled={submitting}
+      >
+        <Text style={styles.secondaryButtonText}>Back</Text>
       </TouchableOpacity>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 20, paddingBottom: 30 },
-  title: { fontSize: 28, fontWeight: '700', color: '#111', marginTop: 10 },
-  subtitle: { color: '#666', marginTop: 8, lineHeight: 22, marginBottom: 12 },
-  routingCard: {
-    backgroundColor: '#F8F3EA',
+  container: {
+    padding: 20,
+    gap: 14,
+    backgroundColor: '#fff',
+  },
+  eyebrow: {
+    color: '#8a6b2f',
+    fontWeight: '700',
+    letterSpacing: 1,
+    fontSize: 12,
+  },
+  title: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#111',
+  },
+  subtitle: {
+    color: '#5D5248',
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  card: {
     borderWidth: 1,
     borderColor: '#E5D2B0',
     borderRadius: 16,
     padding: 14,
-    marginBottom: 14,
-  },
-  routingTitle: { fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 12 },
-  routingOption: {
-    borderWidth: 1,
-    borderColor: '#D8C7AA',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
+    gap: 10,
     backgroundColor: '#fff',
   },
-  routingOptionActive: { borderColor: '#111', backgroundColor: '#FFF8EC' },
-  routingOptionTitle: { color: '#111', fontWeight: '700', marginBottom: 6, fontSize: 15 },
-  routingOptionText: { color: '#5D5248', lineHeight: 20 },
-  snapshot: { color: '#5D5248', marginBottom: 8 },
+  label: {
+    fontWeight: '800',
+    color: '#111',
+    fontSize: 18,
+  },
+  value: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111',
+  },
+  mutedText: {
+    color: '#5D5248',
+    lineHeight: 20,
+  },
+  meta: {
+    color: '#6d6258',
+    fontSize: 13,
+  },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 14,
+    borderColor: '#D8C7AA',
+    borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 14,
     fontSize: 15,
-    marginBottom: 14,
+    color: '#111',
     backgroundColor: '#fff',
   },
   multiline: { minHeight: 120 },

@@ -41,6 +41,8 @@ type Lead = {
   customer_phone?: string | null;
   design_title?: string | null;
   design_summary?: string | null;
+  design_image?: string | null;
+  design_images?: string[] | null;
   jewelry_type?: string | null;
   metal?: string | null;
   stone?: string | null;
@@ -51,6 +53,7 @@ type Lead = {
   created_at?: string | null;
   backend_mode?: string | null;
   assigned_vendor_name?: string | null;
+  selected_specs?: Record<string, any> | null;
 };
 
 type Quote = {
@@ -116,6 +119,13 @@ function buildSyntheticLeadFromNotification(
 
   const leadId = meta.lead_id || event.reference_id || `notif-lead-${event.id}`;
 
+  const rawImages = meta.design_images;
+  const imageList = Array.isArray(rawImages)
+    ? rawImages.filter(Boolean)
+    : meta.design_image
+      ? [meta.design_image]
+      : [];
+
   return {
     id: String(leadId),
     vendor_id: currentVendor?.id || null,
@@ -124,6 +134,8 @@ function buildSyntheticLeadFromNotification(
     customer_phone: meta.customer_phone || '',
     design_title: meta.design_title || meta.jewelry_type || 'Custom jewelry request',
     design_summary: meta.design_summary || event.body || '',
+    design_image: meta.design_image || imageList[0] || null,
+    design_images: imageList.length ? imageList : null,
     jewelry_type: meta.jewelry_type || '',
     metal: meta.metal || '',
     stone: meta.stone || '',
@@ -137,6 +149,7 @@ function buildSyntheticLeadFromNotification(
     created_at: event.created_at || new Date().toISOString(),
     backend_mode: 'notification_fallback',
     assigned_vendor_name: currentVendor?.business_name || null,
+    selected_specs: meta.selected_specs || null,
   };
 }
 
@@ -277,9 +290,7 @@ export default function VendorDashboardPage() {
           sortByCreatedAtDesc([...remoteLeads, ...notificationLeads, ...localLeads])
         );
 
-        const mergedQuotes = dedupeById(
-          sortByCreatedAtDesc([...remoteQuotes, ...localQuotes])
-        );
+        const mergedQuotes = dedupeById(sortByCreatedAtDesc([...remoteQuotes, ...localQuotes]));
 
         setLeads(mergedLeads);
         setQuotes(mergedQuotes);
@@ -557,12 +568,28 @@ export default function VendorDashboardPage() {
             {!!latestLead.customer_email && (
               <Text style={styles.listMeta}>{latestLead.customer_email}</Text>
             )}
+            {!!latestLead.customer_phone && (
+              <Text style={styles.listMeta}>{latestLead.customer_phone}</Text>
+            )}
             {!!latestLead.design_title && (
               <Text style={styles.listMeta}>{latestLead.design_title}</Text>
+            )}
+            {!!latestLead.jewelry_type && (
+              <Text style={styles.listMeta}>Type: {latestLead.jewelry_type}</Text>
+            )}
+            {(latestLead.metal || latestLead.stone) && (
+              <Text style={styles.listMeta}>
+                {latestLead.metal ? `Metal: ${latestLead.metal}` : ''}{latestLead.metal && latestLead.stone ? ' • ' : ''}{latestLead.stone ? `Stone: ${latestLead.stone}` : ''}
+              </Text>
             )}
             {latestLead.budget != null && (
               <Text style={styles.listMeta}>Budget: ${latestLead.budget}</Text>
             )}
+            {Array.isArray(latestLead.design_images) && latestLead.design_images.length > 0 ? (
+              <Text style={styles.listMeta}>Reference images: {latestLead.design_images.length}</Text>
+            ) : latestLead.design_image ? (
+              <Text style={styles.listMeta}>Reference image attached</Text>
+            ) : null}
           </View>
         ) : null}
 
@@ -586,6 +613,8 @@ export default function VendorDashboardPage() {
                     customerPhone: lead.customer_phone || '',
                     designTitle: lead.design_title || '',
                     designSummary: lead.design_summary || '',
+                    designImage: lead.design_image || '',
+                    designImages: lead.design_images ? JSON.stringify(lead.design_images) : '',
                     jewelryType: lead.jewelry_type || '',
                     metal: lead.metal || '',
                     stone: lead.stone || '',
@@ -593,6 +622,7 @@ export default function VendorDashboardPage() {
                     timeline: lead.timeline || '',
                     notes: lead.notes || '',
                     status: lead.status || '',
+                    selectedSpecs: lead.selected_specs ? JSON.stringify(lead.selected_specs) : '',
                   },
                 } as any)
               }
@@ -603,7 +633,18 @@ export default function VendorDashboardPage() {
               {!!lead.customer_email && <Text style={styles.listMeta}>{lead.customer_email}</Text>}
               {!!lead.customer_phone && <Text style={styles.listMeta}>{lead.customer_phone}</Text>}
               {!!lead.design_title && <Text style={styles.listMeta}>{lead.design_title}</Text>}
+              {!!lead.jewelry_type && <Text style={styles.listMeta}>Type: {lead.jewelry_type}</Text>}
+              {(lead.metal || lead.stone) && (
+                <Text style={styles.listMeta}>
+                  {lead.metal ? `Metal: ${lead.metal}` : ''}{lead.metal && lead.stone ? ' • ' : ''}{lead.stone ? `Stone: ${lead.stone}` : ''}
+                </Text>
+              )}
               {lead.budget != null && <Text style={styles.listMeta}>Budget: ${lead.budget}</Text>}
+              {Array.isArray(lead.design_images) && lead.design_images.length > 0 ? (
+                <Text style={styles.listMeta}>Reference images: {lead.design_images.length}</Text>
+              ) : lead.design_image ? (
+                <Text style={styles.listMeta}>Reference image attached</Text>
+              ) : null}
               <Text style={styles.linkText}>Open lead → build quote → create order</Text>
             </TouchableOpacity>
           ))
