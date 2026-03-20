@@ -1,8 +1,8 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { router } from 'expo-router';
+import { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
@@ -12,212 +12,270 @@ import {
   View,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
-import { hapticError, hapticSuccess, hapticTap } from '../lib/haptics';
-import { ensureVendorProfileForUser } from '../lib/vendorAuth';
 
-const adminEmails = String(process.env.EXPO_PUBLIC_ADMIN_EMAILS || '')
-  .split(',')
-  .map((item) => item.trim().toLowerCase())
-  .filter(Boolean);
+function showMessage(title: string, message: string, onDone?: () => void) {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    window.alert(`${title}\n\n${message}`);
+    onDone?.();
+    return;
+  }
+
+  Alert.alert(title, message, [{ text: 'OK', onPress: () => onDone?.() }]);
+}
 
 export default function VendorLoginScreen() {
-  const params = useLocalSearchParams<{ email?: string; pendingVerification?: string }>();
-  const [email, setEmail] = useState(String(params.email ?? ''));
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [errorText, setErrorText] = useState('');
   const [loading, setLoading] = useState(false);
-  const [statusMessage, setStatusMessage] = useState(
-    params.pendingVerification === '1'
-      ? 'Check your inbox, verify your email, and then log in here.'
-      : ''
-  );
 
-  useEffect(() => {
-    setEmail(String(params.email ?? ''));
-  }, [params.email]);
-
-  const handleLogin = async () => {
-    await hapticTap();
-    if (loading) return;
-    if (!email || !password) {
-      Alert.alert('Missing details', 'Enter both email and password.');
-      return;
-    }
-
-    setLoading(true);
-    setStatusMessage('Signing in...');
-
+  const handleVendorLogin = async () => {
     try {
+      setErrorText('');
+
       const normalizedEmail = email.trim().toLowerCase();
+      if (!normalizedEmail || !password.trim()) {
+        setErrorText('Enter your email and password.');
+        return;
+      }
+
+      setLoading(true);
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password,
       });
 
-      if (error) throw error;
-
-      const userId = data.user?.id;
-      if (!userId) throw new Error('Signed in, but user details were missing.');
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', userId)
-        .maybeSingle();
-
-      const role = String(profile?.role || data.user?.user_metadata?.role || '').trim().toLowerCase();
-      const isAdmin = role === 'admin' || adminEmails.includes(normalizedEmail);
-
-      if (isAdmin) {
-        setStatusMessage('Admin account detected. Redirecting to admin dashboard...');
-        router.replace('/admin-dashboard' as any);
+      if (error) {
+        console.log('Vendor login error:', error);
+        setErrorText(error.message || 'Could not sign in.');
         return;
       }
 
-      await ensureVendorProfileForUser({ userId, email: normalizedEmail });
+      const authUser = data.user;
+      if (!authUser?.id) {
+        setErrorText('Login succeeded, but no user session was returned.');
+        return;
+      }
 
-      setStatusMessage('Signed in successfully. Redirecting to your dashboard...');
-      await hapticSuccess();
-        router.replace('/vendor-dashboard' as any);
+      const vendorLookup = await supabase
+        .from('vendors')
+        .select('id, business_name, user_id')
+        .eq('user_id', authUser.id)
+        .maybeSingle();
+
+      if (vendorLookup.error) {
+        console.log('Vendor profile lookup error:', vendorLookup.error);
+        setErrorText(vendorLookup.error.message || 'Could not load vendor profile.');
+        return;
+      }
+
+      if (!vendorLookup.data) {
+        showMessage(
+          'Vendor setup incomplete',
+          'Your login worked, but this account is not linked to a vendor profile yet. Complete vendor signup first.',
+          () => router.replace('/vendor-signup' as any)
+        );
+        return;
+      }
+
+      router.replace('/vendor-dashboard' as any);
     } catch (error: any) {
-      console.error('Vendor login failed:', error);
-      const message = error?.message || 'Vendor login failed.';
-      setStatusMessage(message);
-      await hapticError();
-      Alert.alert('Login error', message);
+      console.log('Vendor login load failed:', error);
+      setErrorText(error?.message || 'Load failed');
     } finally {
       setLoading(false);
     }
   };
 
   const handleForgotPassword = async () => {
-    if (!email) {
-      Alert.alert('Email required', 'Enter your email first so we know where to send the reset link.');
-      return;
-    }
-
     try {
+      setErrorText('');
+      const normalizedEmail = email.trim().toLowerCase();
+
+      if (!normalizedEmail) {
+        setErrorText('Enter your email first so we can send the reset link.');
+        return;
+      }
+
+      setLoading(true);
+
       const redirectTo =
-        typeof window !== 'undefined' ? `${window.location.origin}/vendor-login` : undefined;
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+        process.env.EXPO_PUBLIC_APP_BASE_URL
+          ? `${process.env.EXPO_PUBLIC_APP_BASE_URL}/vendor-login`
+          : undefined;
+
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
         redirectTo,
       });
-      if (error) throw error;
-      setStatusMessage('Password reset email sent. Please check your inbox.');
+
+      if (error) {
+        console.log('Vendor forgot password error:', error);
+        setErrorText(error.message || 'Could not send reset email.');
+        return;
+      }
+
+      showMessage('Reset email sent', 'Check your inbox for the password reset link.');
     } catch (error: any) {
-      const message = error?.message || 'Unable to send password reset email.';
-      setStatusMessage(message);
-      Alert.alert('Reset error', message);
+      console.log('Vendor forgot password load failed:', error);
+      setErrorText(error?.message || 'Load failed');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: '#fff' }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Vendor Log In</Text>
-        <Text style={styles.subtitle}>
-          Sign in to manage your store, leads, invite link, and vendor dashboard.
-        </Text>
+    <ScrollView contentContainerStyle={styles.container}>
+      <Text style={styles.title}>Vendor Log In</Text>
+      <Text style={styles.subtitle}>
+        Sign in to manage your store, leads, invite link, and vendor dashboard.
+      </Text>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
+      <TextInput
+        style={styles.input}
+        value={email}
+        onChangeText={(value) => {
+          setEmail(value);
+          if (errorText) setErrorText('');
+        }}
+        autoCapitalize="none"
+        keyboardType="email-address"
+        placeholder="Vendor email"
+        editable={!loading}
+      />
 
-        {statusMessage ? (
-          <View style={styles.statusBox}>
-            <Text style={styles.statusText}>{statusMessage}</Text>
-          </View>
-        ) : null}
+      <TextInput
+        style={styles.input}
+        value={password}
+        onChangeText={(value) => {
+          setPassword(value);
+          if (errorText) setErrorText('');
+        }}
+        secureTextEntry
+        placeholder="Password"
+        editable={!loading}
+      />
 
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          <Text style={styles.buttonText}>{loading ? 'Signing in...' : 'Sign In'}</Text>
-        </TouchableOpacity>
+      {!!errorText && (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{errorText}</Text>
+        </View>
+      )}
 
-        <TouchableOpacity style={styles.linkButton} onPress={handleForgotPassword}>
-          <Text style={styles.linkText}>Forgot password?</Text>
-        </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.primaryButton, loading && styles.buttonDisabled]}
+        onPress={handleVendorLogin}
+        disabled={loading}
+      >
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Sign In</Text>}
+      </TouchableOpacity>
 
-        <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push('/vendor-signup' as any)}>
-          <Text style={styles.secondaryButtonText}>Create Vendor Account</Text>
-        </TouchableOpacity>
+      <TouchableOpacity onPress={handleForgotPassword} disabled={loading}>
+        <Text style={styles.linkText}>Forgot password?</Text>
+      </TouchableOpacity>
 
-        <TouchableOpacity style={styles.adminButton} onPress={() => router.push('/admin-login' as any)}>
-          <Text style={styles.adminButtonText}>Go to Admin Login</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      <TouchableOpacity
+        style={styles.secondaryButton}
+        onPress={() => router.push('/vendor-signup' as any)}
+        disabled={loading}
+      >
+        <Text style={styles.secondaryButtonText}>Create Vendor Account</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.adminButton}
+        onPress={() => router.push('/admin-login' as any)}
+        disabled={loading}
+      >
+        <Text style={styles.adminButtonText}>Go to Admin Login</Text>
+      </TouchableOpacity>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, paddingBottom: 40 },
-  title: { fontSize: 28, fontWeight: '700', color: '#111', marginTop: 20 },
-  subtitle: { fontSize: 15, color: '#666', marginTop: 8, marginBottom: 20, lineHeight: 22 },
+  container: {
+    padding: 20,
+    gap: 16,
+    justifyContent: 'center',
+    flexGrow: 1,
+    backgroundColor: '#fff',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#111',
+  },
+  subtitle: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#5D5248',
+  },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#D8C7AA',
+    backgroundColor: '#F5F6BE',
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 14,
-    fontSize: 15,
-    marginBottom: 14,
-    backgroundColor: '#fff',
+    fontSize: 16,
+    color: '#111',
   },
-  statusBox: {
+  errorBox: {
     borderWidth: 1,
     borderColor: '#E5D2B0',
-    backgroundColor: '#FFF7E8',
+    backgroundColor: '#F3ECDD',
     borderRadius: 14,
-    padding: 14,
-    marginBottom: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
   },
-  statusText: { color: '#5D5248', lineHeight: 20 },
-  button: {
-    backgroundColor: '#111',
+  errorText: {
+    color: '#5D5248',
+    fontSize: 15,
+  },
+  primaryButton: {
+    backgroundColor: '#05060A',
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 8,
   },
-  buttonDisabled: { opacity: 0.7 },
-  buttonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  linkButton: { alignItems: 'center', marginTop: 14 },
-  linkText: { color: '#7A5B2E', fontWeight: '600' },
+  primaryButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  },
   secondaryButton: {
     borderWidth: 1,
     borderColor: '#111',
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 12,
   },
-  secondaryButtonText: { color: '#111', fontSize: 15, fontWeight: '700' },
+  secondaryButtonText: {
+    color: '#111',
+    fontWeight: '700',
+    fontSize: 16,
+  },
   adminButton: {
     borderWidth: 1,
-    borderColor: '#C79C59',
+    borderColor: '#C9A15B',
+    backgroundColor: '#F7F0DF',
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 12,
-    backgroundColor: '#FFF7E8',
   },
-  adminButtonText: { color: '#7A5B2E', fontSize: 15, fontWeight: '700' },
+  adminButtonText: {
+    color: '#8A6B2F',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  linkText: {
+    color: '#8A6B2F',
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
 });

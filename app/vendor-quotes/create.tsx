@@ -1,14 +1,14 @@
-import { createVendorQuote, updateLeadStatus } from "@/lib/quotes";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
 } from "react-native";
+import { createVendorQuote, updateLeadStatus } from "../../lib/quotes";
 
 export default function CreateVendorQuotePage() {
   const router = useRouter();

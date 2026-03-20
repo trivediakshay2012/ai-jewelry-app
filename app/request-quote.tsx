@@ -141,6 +141,7 @@ export default function RequestQuoteScreen() {
   const [timeline, setTimeline] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [errorText, setErrorText] = useState('');
 
   const approvedManualVendors = useMemo(
     () =>
@@ -229,25 +230,44 @@ export default function RequestQuoteScreen() {
 
   const handleSubmit = async () => {
     try {
-      if (!customerName.trim() || !customerEmail.trim()) {
-        showMessage('Missing details', 'Please enter your name and email.');
-        return;
-      }
-
-      if (!resolvedVendorId) {
-        showMessage('No vendor available', 'Choose a vendor before submitting.');
-        return;
-      }
-
-      setSubmitting(true);
-
+      setErrorText('');
+      console.log('Submit tapped');
+  
       const normalizedEmail = customerEmail.trim().toLowerCase();
       const normalizedName = customerName.trim();
       const normalizedPhone = customerPhone.trim() || undefined;
       const resolvedTitle = designTitle || catalogItemTitle || 'Jewelry Quote Request';
-
+  
+      if (!normalizedName || !normalizedEmail) {
+        setErrorText('Please enter your name and email.');
+        showMessage('Missing details', 'Please enter your name and email.');
+        return;
+      }
+  
+      let finalVendorId = resolvedVendorId;
+      let finalVendorName = resolvedVendorName;
+      let finalInviteCode = resolvedInviteCode;
+  
+      if (!finalVendorId) {
+        const ranked = rankVendorsForLead(vendorDirectory as any, { jewelryType });
+        const fallbackVendor = ranked?.[0] || approvedManualVendors?.[0] || null;
+  
+        if (fallbackVendor) {
+          finalVendorId = fallbackVendor.id;
+          finalVendorName = fallbackVendor.business_name || '';
+          finalInviteCode = fallbackVendor.invite_code || '';
+        }
+      }
+  
+      if (!finalVendorId) {
+        showMessage('No vendor available', 'No vendor is available yet. Please create/select a vendor first.');
+        return;
+      }
+  
+      setSubmitting(true);
+  
       const payload = {
-        vendorId: resolvedVendorId,
+        vendorId: finalVendorId,
         customerName: normalizedName,
         customerEmail: normalizedEmail,
         customerPhone: normalizedPhone,
@@ -263,24 +283,26 @@ export default function RequestQuoteScreen() {
         source,
         routingMode,
         catalogItemTitle: catalogItemTitle || undefined,
-        assignedVendorName: resolvedVendorName || undefined,
-        inviteCode: resolvedInviteCode || undefined,
+        assignedVendorName: finalVendorName || undefined,
+        inviteCode: finalInviteCode || undefined,
         designImages,
         selectedSpecs,
       };
-
+  
+      console.log('Submitting payload:', payload);
+  
       const savedLead = await saveLead(payload as any);
-
+  
       try {
         await createLocalLead({
-          vendor_id: resolvedVendorId || null,
-          invite_code: resolvedInviteCode || null,
+          vendor_id: finalVendorId || null,
+          invite_code: finalInviteCode || null,
           customer_name: normalizedName,
           customer_email: normalizedEmail,
           customer_phone: normalizedPhone || null,
           design_title: resolvedTitle,
           design_summary: designSummary || null,
-          design_image: designImage || designImages[0] || null,
+          design_image: designImage || designImages?.[0] || null,
           jewelry_type: jewelryType || null,
           metal: metal || null,
           stone: stone || null,
@@ -289,18 +311,18 @@ export default function RequestQuoteScreen() {
           notes: notes.trim() || null,
           status: 'submitted',
           source,
-          assigned_vendor_name: resolvedVendorName || null,
+          assigned_vendor_name: finalVendorName || null,
           backend_mode: 'supabase',
         } as any);
       } catch (localError) {
         console.log('Local lead mirror skipped:', localError);
       }
-
+  
       createNotificationEvent({
         audience: 'vendor',
         title: 'New lead received',
         body: `${normalizedName} submitted a quote request${resolvedTitle ? ` for ${resolvedTitle}` : ''}.`,
-        recipientVendorId: resolvedVendorId,
+        recipientVendorId: finalVendorId,
         recipientEmail: null,
         referenceType: 'vendor_lead',
         referenceId: savedLead?.id || null,
@@ -312,7 +334,7 @@ export default function RequestQuoteScreen() {
           design_title: resolvedTitle,
           design_summary: designSummary || null,
           design_image: designImage || null,
-          design_images: designImages.length ? designImages : null,
+          design_images: designImages?.length ? designImages : null,
           jewelry_type: jewelryType || null,
           metal: metal || null,
           stone: stone || null,
@@ -321,16 +343,16 @@ export default function RequestQuoteScreen() {
           notes: notes.trim() || null,
           source,
           routing_mode: routingMode,
-          assigned_vendor_name: resolvedVendorName || null,
-          invite_code: resolvedInviteCode || null,
+          assigned_vendor_name: finalVendorName || null,
+          invite_code: finalInviteCode || null,
           selected_specs: selectedSpecs || null,
           status: 'submitted',
         },
       }).catch((e) => console.log('vendor notification skipped', e));
-
+  
       showMessage(
         'Quote request submitted',
-        `Your request was submitted successfully${resolvedVendorName ? ` to ${resolvedVendorName}` : ''}.`,
+        `Your request was submitted successfully${finalVendorName ? ` to ${finalVendorName}` : ''}.`,
         () =>
           router.replace({
             pathname: '/my-quotes',
@@ -349,7 +371,11 @@ export default function RequestQuoteScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView
+      contentContainerStyle={styles.container}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+    >
       <Text style={styles.eyebrow}>REQUEST A QUOTE</Text>
       <Text style={styles.title}>Send your design to a vendor</Text>
       <Text style={styles.subtitle}>
@@ -456,9 +482,16 @@ export default function RequestQuoteScreen() {
         />
       </View>
 
+      {!!errorText ? <Text style={styles.errorText}>{errorText}</Text> : null}
+
       <TouchableOpacity
+        activeOpacity={0.85}
         style={[styles.primaryButton, submitting && { opacity: 0.65 }]}
-        onPress={handleSubmit}
+        onPress={() => {
+          console.log('Submit button pressed');
+          handleSubmit();
+        }}
+        onPressIn={() => console.log('Submit button press-in')}
         disabled={submitting}
       >
         <Text style={styles.primaryButtonText}>
@@ -536,6 +569,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   multiline: { minHeight: 120 },
+  errorText: {
+    color: '#b00020',
+    fontSize: 14,
+    marginTop: 4,
+  },
   primaryButton: {
     backgroundColor: '#111',
     borderRadius: 14,
