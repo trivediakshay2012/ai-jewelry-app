@@ -9,6 +9,7 @@ export type SaveLeadInput = {
   designTitle?: string;
   designSummary?: string;
   designImage?: string;
+  designImages?: string[] | null;
   budget?: number | null;
   notes?: string;
   timeline?: string;
@@ -21,6 +22,7 @@ export type SaveLeadInput = {
   assignedVendorName?: string;
   leadSourceDetail?: string;
   inviteCode?: string;
+  selectedSpecs?: Record<string, unknown> | null;
 };
 
 function normalizeOptionalText(value?: string | null) {
@@ -42,6 +44,7 @@ function buildLeadPayload(input: SaveLeadInput) {
     design_title: normalizeOptionalText(input.designTitle),
     design_summary: normalizeOptionalText(input.designSummary),
     design_image: normalizeOptionalText(input.designImage),
+    design_images: Array.isArray(input.designImages) ? input.designImages.filter(Boolean) : null,
     jewelry_type: normalizeOptionalText(input.jewelryType),
     metal: normalizeOptionalText(input.metal),
     stone: normalizeOptionalText(input.stone),
@@ -54,6 +57,7 @@ function buildLeadPayload(input: SaveLeadInput) {
     catalog_item_title: normalizeOptionalText(input.catalogItemTitle),
     assigned_vendor_name: normalizeOptionalText(input.assignedVendorName),
     lead_source_detail: normalizeOptionalText(input.leadSourceDetail),
+    selected_specs: input.selectedSpecs || null,
     created_at: new Date().toISOString(),
   };
 }

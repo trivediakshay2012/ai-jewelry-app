@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useDesign } from '../context/DesignContext';
@@ -21,7 +21,17 @@ function normalizeText(value: string | null | undefined) {
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+
+function showMessage(title: string, message: string) {
+  if (typeof window !== 'undefined') {
+    window.alert(`${title}\n\n${message}`);
+    return;
+  }
+  Alert.alert(title, message);
+}
+
 export default function VendorCatalogScreen() {
+  const router = useRouter();
   const { addToCart, applyVendorInspiration, cartItems } = useDesign();
   const params = useLocalSearchParams<any>();
   const quoteContext = useMemo(() => ({
@@ -38,6 +48,8 @@ export default function VendorCatalogScreen() {
     budget: Array.isArray(params.budget) ? params.budget[0] : params.budget,
     source: Array.isArray(params.source) ? params.source[0] : params.source,
     leadSourceDetail: Array.isArray(params.leadSourceDetail) ? params.leadSourceDetail[0] : params.leadSourceDetail,
+    designImages: Array.isArray(params.designImages) ? params.designImages[0] : params.designImages,
+    selectedSpecs: Array.isArray(params.selectedSpecs) ? params.selectedSpecs[0] : params.selectedSpecs,
   }), [params]);
 
   const isChoosingVendorForQuote = quoteContext.returnToQuote === '1';
@@ -83,12 +95,29 @@ export default function VendorCatalogScreen() {
   }, []);
 
   const findLiveVendorForItem = (item: VendorStockItem) => {
-    if (item.vendorId) {
-      const byId = vendorDirectory.find((vendor) => vendor.id === item.vendorId);
+    const normalizedVendorId = String(item.vendorId || '').trim();
+    if (normalizedVendorId) {
+      const byId = vendorDirectory.find((vendor) => String(vendor.id || '').trim() === normalizedVendorId);
       if (byId) return byId;
     }
-    const exact = normalizeText(item.vendorName);
-    return vendorDirectory.find((vendor) => normalizeText(vendor.business_name) === exact) || null;
+
+    const normalizedInviteCode = normalizeText(item.inviteCode);
+    if (normalizedInviteCode) {
+      const byInviteCode = vendorDirectory.find(
+        (vendor) => normalizeText(vendor.invite_code) === normalizedInviteCode
+      );
+      if (byInviteCode) return byInviteCode;
+    }
+
+    const normalizedVendorName = normalizeText(item.vendorName);
+    if (normalizedVendorName) {
+      const byName = vendorDirectory.find(
+        (vendor) => normalizeText(vendor.business_name) === normalizedVendorName
+      );
+      if (byName) return byName;
+    }
+
+    return null;
   };
 
   const filteredInventory = useMemo(() => {
@@ -140,6 +169,8 @@ export default function VendorCatalogScreen() {
     designTitle: quoteContext.designTitle || item.title,
     designSummary: quoteContext.designSummary || item.description,
     designImage: quoteContext.designImage || item.imageUrl,
+    designImages: quoteContext.designImages || JSON.stringify([quoteContext.designImage, item.imageUrl].filter(Boolean)),
+    selectedSpecs: quoteContext.selectedSpecs || null,
     jewelryType: quoteContext.jewelryType || item.category,
     metal: quoteContext.metal || `${item.metalPurity} ${item.metal}`,
     stone: quoteContext.stone || `${item.shape} ${item.stone}`,
@@ -153,9 +184,18 @@ export default function VendorCatalogScreen() {
     await hapticTap();
     const matchedVendor = findLiveVendorForItem(item);
     if (!matchedVendor) {
-      Alert.alert('Vendor not ready', 'This product is not linked to an approved live vendor account yet.');
+      console.log('Vendor catalog quote mapping failed', {
+        itemId: item.id,
+        title: item.title,
+        vendorId: item.vendorId,
+        vendorName: item.vendorName,
+        inviteCode: item.inviteCode,
+        vendorDirectorySize: vendorDirectory.length,
+      });
+      showMessage('Vendor not ready', 'This product is not linked to an approved live vendor account yet.');
       return;
     }
+    console.log('Opening request-quote from vendor catalog', { itemId: item.id, vendorId: matchedVendor.id, vendorName: matchedVendor.business_name });
     router.push({ pathname: '/request-quote', params: buildQuoteParamsForItem(item, matchedVendor) } as any);
   };
 
@@ -163,9 +203,18 @@ export default function VendorCatalogScreen() {
     await hapticTap();
     const matchedVendor = findLiveVendorForItem(item);
     if (!matchedVendor) {
-      Alert.alert('Vendor mapping missing', 'This catalog item is not linked to a live vendor account yet.');
+      console.log('Vendor catalog custom-design mapping failed', {
+        itemId: item.id,
+        title: item.title,
+        vendorId: item.vendorId,
+        vendorName: item.vendorName,
+        inviteCode: item.inviteCode,
+        vendorDirectorySize: vendorDirectory.length,
+      });
+      showMessage('Vendor mapping missing', 'This catalog item is not linked to a live vendor account yet.');
       return;
     }
+    console.log('Opening request-quote from vendor catalog', { itemId: item.id, vendorId: matchedVendor.id, vendorName: matchedVendor.business_name });
     router.push({ pathname: '/request-quote', params: buildQuoteParamsForItem(item, matchedVendor) } as any);
   };
 
@@ -177,6 +226,8 @@ export default function VendorCatalogScreen() {
         designTitle: quoteContext.designTitle || `${quoteContext.jewelryType || 'Custom Jewelry'} Design`,
         designSummary: quoteContext.designSummary || 'Customer completed a custom design flow and wants the platform to auto-route the lead to a priority vendor.',
         designImage: quoteContext.designImage || '',
+        designImages: quoteContext.designImages || JSON.stringify([quoteContext.designImage].filter(Boolean)),
+        selectedSpecs: quoteContext.selectedSpecs || null,
         jewelryType: quoteContext.jewelryType || '',
         metal: quoteContext.metal || '',
         stone: quoteContext.stone || '',
@@ -201,6 +252,7 @@ export default function VendorCatalogScreen() {
               ? 'This catalog is scoped to the selected vendor only, so products from other vendors will not appear here.'
               : 'Demo vendors are disabled in the production path. Customers only see approved products from real onboarded vendors.'}
         </Text>
+        <Text style={styles.debugBanner}>VENDOR CATALOG DEBUG BUILD</Text>
         <View style={styles.heroRow}>
           <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/cart' as any)}>
             <Text style={styles.primaryButtonText}>Open Cart ({cartItems.length})</Text>
@@ -242,7 +294,21 @@ export default function VendorCatalogScreen() {
             </View>
             <View style={styles.buttonRow}>
               <TouchableOpacity style={styles.actionButtonSecondary} onPress={() => handleUseAsInspiration(item)}><Text style={styles.actionButtonSecondaryText}>Use as Inspiration</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.actionButtonSecondary} onPress={() => isChoosingVendorForQuote ? handleChooseVendorForCustomDesign(item) : handleRequestQuoteFromCatalogItem(item)}><Text style={styles.actionButtonSecondaryText}>{isChoosingVendorForQuote ? 'Choose Vendor' : 'Request Quote'}</Text></TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={styles.actionButtonSecondary}
+                onPress={() => {
+                  console.log('Vendor catalog secondary quote button pressed', {
+                    itemId: item.id,
+                    mode: isChoosingVendorForQuote ? 'choose_vendor' : 'request_quote',
+                  });
+                  if (isChoosingVendorForQuote) {
+                    handleChooseVendorForCustomDesign(item);
+                  } else {
+                    handleRequestQuoteFromCatalogItem(item);
+                  }
+                }}
+              ><Text style={styles.actionButtonSecondaryText}>{isChoosingVendorForQuote ? 'Choose Vendor' : 'Request Quote'}</Text></TouchableOpacity>
             </View>
           </View>
         );
@@ -258,6 +324,7 @@ const styles = StyleSheet.create({
   eyebrow: { color: '#8a6b2f', fontWeight: '700', textTransform: 'uppercase', fontSize: 12, letterSpacing: 1 },
   title: { fontSize: 28, fontWeight: '800', color: '#1B1714', marginTop: 10 },
   subtitle: { color: '#675B51', marginTop: 8, lineHeight: 22 },
+  debugBanner: { color: '#b00020', fontWeight: '800', marginTop: 12 },
   heroRow: { gap: 10, marginTop: 16 },
   primaryButton: { backgroundColor: '#111', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   primaryButtonText: { color: '#fff', fontWeight: '700' },

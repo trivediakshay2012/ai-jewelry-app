@@ -13,6 +13,7 @@ export type LocalLeadRecord = BaseRecord & {
   design_title?: string | null;
   design_summary?: string | null;
   design_image?: string | null;
+  design_images?: string[] | null;
   jewelry_type?: string | null;
   metal?: string | null;
   stone?: string | null;
@@ -25,6 +26,7 @@ export type LocalLeadRecord = BaseRecord & {
   catalog_item_title?: string | null;
   assigned_vendor_name?: string | null;
   lead_source_detail?: string | null;
+  selected_specs?: Record<string, unknown> | null;
   backend_mode?: 'supabase' | 'local_fallback';
 };
 

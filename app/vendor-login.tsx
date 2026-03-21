@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { ensureVendorProfileForUser } from '../lib/vendorAuth';
 
 function showMessage(title: string, message: string, onDone?: () => void) {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -24,6 +25,7 @@ function showMessage(title: string, message: string, onDone?: () => void) {
 }
 
 export default function VendorLoginScreen() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorText, setErrorText] = useState('');
@@ -58,22 +60,24 @@ export default function VendorLoginScreen() {
         return;
       }
 
-      const vendorLookup = await supabase
-        .from('vendors')
-        .select('id, business_name, user_id')
-        .eq('user_id', authUser.id)
-        .maybeSingle();
+      const vendorProfile = await ensureVendorProfileForUser({
+        userId: authUser.id,
+        email: authUser.email || normalizedEmail,
+      });
 
-      if (vendorLookup.error) {
-        console.log('Vendor profile lookup error:', vendorLookup.error);
-        setErrorText(vendorLookup.error.message || 'Could not load vendor profile.');
-        return;
-      }
-
-      if (!vendorLookup.data) {
+      if (!vendorProfile) {
         showMessage(
           'Vendor setup incomplete',
           'Your login worked, but this account is not linked to a vendor profile yet. Complete vendor signup first.',
+          () => router.replace('/vendor-signup' as any)
+        );
+        return;
+      }
+
+      if (vendorProfile.is_onboarded !== true) {
+        showMessage(
+          'Finish vendor setup',
+          'Your account is linked, but onboarding is not complete yet. Please finish vendor signup before using the dashboard.',
           () => router.replace('/vendor-signup' as any)
         );
         return;
@@ -125,7 +129,11 @@ export default function VendorLoginScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView
+      contentContainerStyle={styles.container}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+    >
       <Text style={styles.title}>Vendor Log In</Text>
       <Text style={styles.subtitle}>
         Sign in to manage your store, leads, invite link, and vendor dashboard.

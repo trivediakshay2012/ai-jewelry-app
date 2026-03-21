@@ -5,6 +5,7 @@ import {
   Alert,
   Platform,
   ScrollView,
+  Image,
   StyleSheet,
   Text,
   TextInput,
@@ -31,6 +32,7 @@ type Lead = {
   design_title?: string | null;
   design_summary?: string | null;
   design_image?: string | null;
+  design_images?: string[] | null;
   jewelry_type?: string | null;
   metal?: string | null;
   stone?: string | null;
@@ -39,6 +41,7 @@ type Lead = {
   notes?: string | null;
   status?: string | null;
   created_at?: string | null;
+  selected_specs?: Record<string, unknown> | null;
 };
 
 type VendorQuote = {

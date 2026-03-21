@@ -30,5 +30,7 @@ export async function getCatalogInventory(): Promise<VendorStockItem[]> {
   } catch (error) {
     console.log('vendorInventory:getCatalogInventory remote fallback', error);
   }
-  return dedupe([...remote, ...stored, ...vendorStock]).sort((a, b) => String(a.title).localeCompare(String(b.title)));
+  return dedupe([...stored, ...remote, ...vendorStock]).sort((a, b) =>
+    String(a.title).localeCompare(String(b.title))
+  );
 }

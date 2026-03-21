@@ -303,6 +303,7 @@ export default function RequestQuoteScreen() {
           design_title: resolvedTitle,
           design_summary: designSummary || null,
           design_image: designImage || designImages?.[0] || null,
+          design_images: designImages?.length ? designImages : null,
           jewelry_type: jewelryType || null,
           metal: metal || null,
           stone: stone || null,
@@ -312,6 +313,7 @@ export default function RequestQuoteScreen() {
           status: 'submitted',
           source,
           assigned_vendor_name: finalVendorName || null,
+          selected_specs: selectedSpecs || null,
           backend_mode: 'supabase',
         } as any);
       } catch (localError) {
@@ -344,6 +346,7 @@ export default function RequestQuoteScreen() {
           source,
           routing_mode: routingMode,
           assigned_vendor_name: finalVendorName || null,
+          selected_specs: selectedSpecs || null,
           invite_code: finalInviteCode || null,
           selected_specs: selectedSpecs || null,
           status: 'submitted',
@@ -381,6 +384,9 @@ export default function RequestQuoteScreen() {
       <Text style={styles.subtitle}>
         Share your contact details, timeline, and any notes so the vendor can respond with pricing.
       </Text>
+      <Text style={{ color: 'red', fontSize: 18, fontWeight: '700' }}>
+  REQUEST QUOTE DEBUG
+</Text>
 
       <View style={styles.card}>
         <Text style={styles.label}>Design</Text>

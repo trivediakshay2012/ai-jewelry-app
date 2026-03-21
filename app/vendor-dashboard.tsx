@@ -43,6 +43,7 @@ type Lead = {
   design_summary?: string | null;
   design_image?: string | null;
   design_images?: string[] | null;
+  design_images?: string[] | null;
   jewelry_type?: string | null;
   metal?: string | null;
   stone?: string | null;

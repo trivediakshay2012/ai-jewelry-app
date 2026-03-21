@@ -50,9 +50,10 @@ function formatDate(value?: string | null) {
 }
 
 export default function MyQuotesScreen() {
-  const params = useLocalSearchParams<{ customerEmail?: string | string[]; customerName?: string | string[] }>();
+  const params = useLocalSearchParams<{ customerEmail?: string | string[]; customerName?: string | string[]; leadId?: string | string[] }>();
   const initialEmail = useMemo(() => Array.isArray(params.customerEmail) ? params.customerEmail[0] || '' : params.customerEmail || '', [params.customerEmail]);
   const initialName = useMemo(() => Array.isArray(params.customerName) ? params.customerName[0] || '' : params.customerName || '', [params.customerName]);
+  const initialLeadId = useMemo(() => Array.isArray(params.leadId) ? params.leadId[0] || '' : params.leadId || '', [params.leadId]);
 
   const [customerEmail, setCustomerEmail] = useState(initialEmail);
   const [customerName] = useState(initialName);
@@ -64,9 +65,10 @@ export default function MyQuotesScreen() {
   const [message, setMessage] = useState('');
   const responsive = useResponsive();
 
-  const loadQuotes = useCallback(async (emailOverride?: string) => {
+  const loadQuotes = useCallback(async (emailOverride?: string, leadIdOverride?: string) => {
     const email = (emailOverride || customerEmail || '').trim().toLowerCase();
-    if (!email) return;
+    const directLeadId = (leadIdOverride || initialLeadId || '').trim();
+    if (!email && !directLeadId) return;
 
     let leadList: LeadRow[] = [];
     let quoteList: QuoteRow[] = [];
@@ -74,14 +76,23 @@ export default function MyQuotesScreen() {
     let loadError: any = null;
 
     try {
-      const { data: leadRows, error: leadError } = await supabase
-        .from('vendor_leads')
-        .select('*')
-        .eq('customer_email', email)
-        .order('created_at', { ascending: false });
-      if (leadError) throw leadError;
-
-      leadList = (leadRows || []) as LeadRow[];
+      if (directLeadId) {
+        const { data: leadRow, error: leadError } = await supabase
+          .from('vendor_leads')
+          .select('*')
+          .eq('id', directLeadId)
+          .maybeSingle();
+        if (leadError) throw leadError;
+        leadList = leadRow ? [leadRow as LeadRow] : [];
+      } else {
+        const { data: leadRows, error: leadError } = await supabase
+          .from('vendor_leads')
+          .select('*')
+          .eq('customer_email', email)
+          .order('created_at', { ascending: false });
+        if (leadError) throw leadError;
+        leadList = (leadRows || []) as LeadRow[];
+      }
       const leadIds = leadList.map((lead) => lead.id).filter(Boolean);
 
       if (leadIds.length > 0) {
@@ -120,7 +131,7 @@ export default function MyQuotesScreen() {
     setOrders(mergedOrders);
 
     if (loadError && mergedLeads.length === 0 && mergedOrders.length === 0) throw loadError;
-  }, [customerEmail]);
+  }, [customerEmail, initialLeadId]);
 
   useEffect(() => {
     if (!initialEmail) return;
