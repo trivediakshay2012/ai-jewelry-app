@@ -169,8 +169,6 @@ export default function VendorCatalogScreen() {
     designTitle: quoteContext.designTitle || item.title,
     designSummary: quoteContext.designSummary || item.description,
     designImage: quoteContext.designImage || item.imageUrl,
-    designImages: quoteContext.designImages || JSON.stringify([quoteContext.designImage, item.imageUrl].filter(Boolean)),
-    selectedSpecs: quoteContext.selectedSpecs || null,
     jewelryType: quoteContext.jewelryType || item.category,
     metal: quoteContext.metal || `${item.metalPurity} ${item.metal}`,
     stone: quoteContext.stone || `${item.shape} ${item.stone}`,
@@ -178,6 +176,19 @@ export default function VendorCatalogScreen() {
     source: isChoosingVendorForQuote ? 'customer_selected' : 'vendor_catalog',
     leadSourceDetail: quoteContext.leadSourceDetail || (isChoosingVendorForQuote ? 'catalog_vendor_selection' : 'catalog_product_quote'),
     catalogItemTitle: item.title,
+    designImages: quoteContext.designImages || JSON.stringify([quoteContext.designImage || item.imageUrl].filter(Boolean)),
+    selectedSpecs: quoteContext.selectedSpecs || JSON.stringify({
+      catalogItemId: item.id,
+      catalogTitle: item.title,
+      category: item.category,
+      metal: item.metal,
+      metalPurity: item.metalPurity,
+      stone: item.stone,
+      shape: item.shape,
+      price: item.price,
+      currency: item.currency,
+      source: 'vendor_catalog',
+    }),
   });
 
   const handleRequestQuoteFromCatalogItem = async (item: VendorStockItem) => {
@@ -226,8 +237,6 @@ export default function VendorCatalogScreen() {
         designTitle: quoteContext.designTitle || `${quoteContext.jewelryType || 'Custom Jewelry'} Design`,
         designSummary: quoteContext.designSummary || 'Customer completed a custom design flow and wants the platform to auto-route the lead to a priority vendor.',
         designImage: quoteContext.designImage || '',
-        designImages: quoteContext.designImages || JSON.stringify([quoteContext.designImage].filter(Boolean)),
-        selectedSpecs: quoteContext.selectedSpecs || null,
         jewelryType: quoteContext.jewelryType || '',
         metal: quoteContext.metal || '',
         stone: quoteContext.stone || '',

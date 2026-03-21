@@ -346,7 +346,6 @@ export default function RequestQuoteScreen() {
           source,
           routing_mode: routingMode,
           assigned_vendor_name: finalVendorName || null,
-          selected_specs: selectedSpecs || null,
           invite_code: finalInviteCode || null,
           selected_specs: selectedSpecs || null,
           status: 'submitted',
@@ -360,6 +359,7 @@ export default function RequestQuoteScreen() {
           router.replace({
             pathname: '/my-quotes',
             params: {
+              leadId: savedLead?.id || '',
               customerEmail: normalizedEmail,
               customerName: normalizedName,
             },

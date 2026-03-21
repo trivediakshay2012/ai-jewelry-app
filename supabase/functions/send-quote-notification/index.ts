@@ -24,7 +24,13 @@ type NotificationInsertInput = {
   metadata?: Record<string, unknown>
 }
 
-const appBaseUrl = (Deno.env.get('APP_BASE_URL') || 'https://www.aurra.us').replace(/\/$/, '')
+function normalizeBaseUrl(input?: string | null) {
+  const raw = String(input || 'https://www.aurra.us').trim().replace(/\/$/, '')
+  if (!raw) return 'https://www.aurra.us'
+  return raw.replace('https://aurra.us', 'https://www.aurra.us').replace('http://aurra.us', 'https://www.aurra.us')
+}
+
+const appBaseUrl = normalizeBaseUrl(Deno.env.get('APP_BASE_URL') || Deno.env.get('EXPO_PUBLIC_APP_BASE_URL') || 'https://www.aurra.us')
 const resendApiKey = Deno.env.get('RESEND_API_KEY') || ''
 const resendFromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'Aurra <quotes@aurra.us>'
 const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID') || ''
@@ -185,9 +191,11 @@ Deno.serve(async (req) => {
     const quoteId = body.quoteId ? String(body.quoteId) : null
     const vendorId = body.vendorId ? String(body.vendorId) : null
     const depositAmount = quoteAmount * (depositPercent / 100)
-    const reviewUrl = leadId
-      ? `${appBaseUrl}/my-quotes?leadId=${encodeURIComponent(leadId)}${customerEmail ? `&customerEmail=${encodeURIComponent(customerEmail)}` : ''}${customerName ? `&customerName=${encodeURIComponent(customerName)}` : ''}`
-      : `${appBaseUrl}/my-quotes${customerEmail ? `?customerEmail=${encodeURIComponent(customerEmail)}${customerName ? `&customerName=${encodeURIComponent(customerName)}` : ''}` : ''}`
+    const reviewQuery = new URLSearchParams()
+    if (leadId) reviewQuery.set('leadId', leadId)
+    if (customerEmail) reviewQuery.set('customerEmail', customerEmail)
+    if (customerName) reviewQuery.set('customerName', customerName)
+    const reviewUrl = `${appBaseUrl}/my-quotes${reviewQuery.toString() ? `?${reviewQuery.toString()}` : ''}`
 
     const title = 'Your Aurra jewelry quote is ready'
     const message = `Your quote for ${designTitle} is ready at ${moneyLabel(quoteAmount)}. Deposit due now: ${moneyLabel(depositAmount)}. Timeline: ${timeline}.`

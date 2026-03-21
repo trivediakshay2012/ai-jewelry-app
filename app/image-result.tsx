@@ -185,21 +185,6 @@ export default function ImageResultScreen() {
       normalizedBudgetAwareReport?.changeSummary ? `Budget Adjustments: ${normalizedBudgetAwareReport.changeSummary}` : '',
     ].filter(Boolean);
 
-    const designImages = [
-      selectedImage?.dataUrl,
-      selectedLifestyle?.dataUrl,
-      selectedPersonalPreview?.dataUrl,
-      selectedBudgetAware?.dataUrl,
-      ...uploadedInspirationUrls,
-    ].filter(Boolean);
-
-    const selectedSpecs = {
-      designData,
-      technicalSheet,
-      pricingEstimate,
-      budgetAwareReport: normalizedBudgetAwareReport,
-    };
-
     return {
       vendorId,
       vendorName,
@@ -207,8 +192,6 @@ export default function ImageResultScreen() {
       designTitle: fallbackTitle,
       designSummary: summaryParts.join(' • '),
       designImage: preferredImage,
-      designImages: JSON.stringify(designImages),
-      selectedSpecs: JSON.stringify(selectedSpecs),
       jewelryType: String(designData?.jewelryType || ''),
       metal: String(designData?.metal || ''),
       stone: String(designData?.stone || ''),

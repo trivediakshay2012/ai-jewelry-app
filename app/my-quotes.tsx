@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { listLocalLeadsByEmail, listLocalOrdersByEmail } from '../lib/localWorkflowStore';
+import { getLocalLeadById, listLocalLeadsByEmail, listLocalOrdersByEmail, listLocalOrdersByLeadId, listLocalQuotesByLeadId } from '../lib/localWorkflowStore';
 import { supabase } from '../lib/supabase';
 import { useResponsive } from '../lib/responsive';
 
@@ -12,6 +12,9 @@ type LeadRow = {
   customer_email?: string | null;
   design_title?: string | null;
   design_summary?: string | null;
+  design_image?: string | null;
+  design_images?: string[] | null;
+  selected_specs?: Record<string, any> | null;
   budget?: number | null;
   status?: string | null;
   created_at?: string | null;
@@ -67,8 +70,8 @@ export default function MyQuotesScreen() {
 
   const loadQuotes = useCallback(async (emailOverride?: string, leadIdOverride?: string) => {
     const email = (emailOverride || customerEmail || '').trim().toLowerCase();
-    const directLeadId = (leadIdOverride || initialLeadId || '').trim();
-    if (!email && !directLeadId) return;
+    const leadId = String(leadIdOverride || initialLeadId || '').trim();
+    if (!email && !leadId) return;
 
     let leadList: LeadRow[] = [];
     let quoteList: QuoteRow[] = [];
@@ -76,14 +79,35 @@ export default function MyQuotesScreen() {
     let loadError: any = null;
 
     try {
-      if (directLeadId) {
+      if (leadId) {
         const { data: leadRow, error: leadError } = await supabase
           .from('vendor_leads')
           .select('*')
-          .eq('id', directLeadId)
+          .eq('id', leadId)
           .maybeSingle();
         if (leadError) throw leadError;
-        leadList = leadRow ? [leadRow as LeadRow] : [];
+        if (leadRow) {
+          leadList = [leadRow as LeadRow];
+          if (!email && leadRow.customer_email) setCustomerEmail(String(leadRow.customer_email));
+        }
+
+        if (leadList.length > 0) {
+          const { data: quoteRows, error: quoteError } = await supabase
+            .from('vendor_quotes')
+            .select('*')
+            .eq('lead_id', leadId)
+            .order('created_at', { ascending: false });
+          if (quoteError) throw quoteError;
+          quoteList = (quoteRows || []) as QuoteRow[];
+
+          const primaryOrders = await supabase.from('vendor_orders').select('*').eq('lead_id', leadId).order('created_at', { ascending: false });
+          if (!primaryOrders.error) {
+            orderRows = (primaryOrders.data || []) as OrderRow[];
+          } else {
+            const fallbackOrders = await supabase.from('orders').select('*').eq('lead_id', leadId).order('created_at', { ascending: false });
+            if (!fallbackOrders.error) orderRows = (fallbackOrders.data || []) as OrderRow[];
+          }
+        }
       } else {
         const { data: leadRows, error: leadError } = await supabase
           .from('vendor_leads')
@@ -91,25 +115,26 @@ export default function MyQuotesScreen() {
           .eq('customer_email', email)
           .order('created_at', { ascending: false });
         if (leadError) throw leadError;
+
         leadList = (leadRows || []) as LeadRow[];
-      }
-      const leadIds = leadList.map((lead) => lead.id).filter(Boolean);
+        const leadIds = leadList.map((lead) => lead.id).filter(Boolean);
 
-      if (leadIds.length > 0) {
-        const { data: quoteRows, error: quoteError } = await supabase
-          .from('vendor_quotes')
-          .select('*')
-          .in('lead_id', leadIds)
-          .order('created_at', { ascending: false });
-        if (quoteError) throw quoteError;
-        quoteList = (quoteRows || []) as QuoteRow[];
+        if (leadIds.length > 0) {
+          const { data: quoteRows, error: quoteError } = await supabase
+            .from('vendor_quotes')
+            .select('*')
+            .in('lead_id', leadIds)
+            .order('created_at', { ascending: false });
+          if (quoteError) throw quoteError;
+          quoteList = (quoteRows || []) as QuoteRow[];
 
-        const primaryOrders = await supabase.from('vendor_orders').select('*').in('lead_id', leadIds).order('created_at', { ascending: false });
-        if (!primaryOrders.error) {
-          orderRows = (primaryOrders.data || []) as OrderRow[];
-        } else {
-          const fallbackOrders = await supabase.from('orders').select('*').in('lead_id', leadIds).order('created_at', { ascending: false });
-          if (!fallbackOrders.error) orderRows = (fallbackOrders.data || []) as OrderRow[];
+          const primaryOrders = await supabase.from('vendor_orders').select('*').in('lead_id', leadIds).order('created_at', { ascending: false });
+          if (!primaryOrders.error) {
+            orderRows = (primaryOrders.data || []) as OrderRow[];
+          } else {
+            const fallbackOrders = await supabase.from('orders').select('*').in('lead_id', leadIds).order('created_at', { ascending: false });
+            if (!fallbackOrders.error) orderRows = (fallbackOrders.data || []) as OrderRow[];
+          }
         }
       }
     } catch (error) {
@@ -117,8 +142,9 @@ export default function MyQuotesScreen() {
       console.log('MyQuotes: supabase load failed, using local fallback', error);
     }
 
-    const localLeads = await listLocalLeadsByEmail(email);
-    const localOrders = await listLocalOrdersByEmail(email);
+    const localLeads = leadId ? [await getLocalLeadById(leadId)].filter(Boolean) : await listLocalLeadsByEmail(email);
+    const localQuoteRows = leadId ? await listLocalQuotesByLeadId(leadId) : [];
+    const localOrders = leadId ? await listLocalOrdersByLeadId(leadId) : await listLocalOrdersByEmail(email);
 
     const mergedLeads = [...leadList, ...localLeads.filter((localLead) => !leadList.some((lead) => lead.id === localLead.id))]
       .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
@@ -126,20 +152,23 @@ export default function MyQuotesScreen() {
     const mergedOrders = [...orderRows, ...localOrders.filter((localOrder) => !orderRows.some((order) => order.id === localOrder.id))]
       .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
 
+    const mergedQuotes = [...quoteList, ...localQuoteRows.filter((localQuote) => !quoteList.some((quote) => quote.id === localQuote.id))]
+      .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+
     setLeads(mergedLeads);
-    setQuotes(quoteList);
+    setQuotes(mergedQuotes);
     setOrders(mergedOrders);
 
-    if (loadError && mergedLeads.length === 0 && mergedOrders.length === 0) throw loadError;
+    if (loadError && mergedLeads.length === 0 && mergedOrders.length === 0 && mergedQuotes.length === 0) throw loadError;
   }, [customerEmail, initialLeadId]);
 
   useEffect(() => {
-    if (!initialEmail) return;
+    if (!initialEmail && !initialLeadId) return;
     let active = true;
     (async () => {
       try {
         setLoading(true);
-        await loadQuotes(initialEmail);
+        await loadQuotes(initialEmail, initialLeadId);
       } catch (error: any) {
         if (active) setMessage(error?.message || 'Could not load quotes.');
       } finally {
@@ -147,7 +176,7 @@ export default function MyQuotesScreen() {
       }
     })();
     return () => { active = false; };
-  }, [initialEmail, loadQuotes]);
+  }, [initialEmail, initialLeadId, loadQuotes]);
 
   const quotesByLeadId = useMemo(() => {
     return quotes.reduce<Record<string, QuoteRow>>((acc, quote) => {
@@ -165,7 +194,7 @@ export default function MyQuotesScreen() {
 
   const handleSearch = async () => {
     try {
-      if (!customerEmail.trim()) {
+      if (!customerEmail.trim() && !initialLeadId) {
         Alert.alert('Email needed', 'Enter the same email you used for your quote request.');
         return;
       }

@@ -26,8 +26,8 @@ export type LocalLeadRecord = BaseRecord & {
   catalog_item_title?: string | null;
   assigned_vendor_name?: string | null;
   lead_source_detail?: string | null;
-  selected_specs?: Record<string, unknown> | null;
   backend_mode?: 'supabase' | 'local_fallback';
+  selected_specs?: Record<string, any> | null;
 };
 
 export type LocalQuoteRecord = BaseRecord & {
@@ -217,6 +217,11 @@ export async function createLocalOrder(
   store.orders.unshift(record);
   await writeStore(store);
   return record;
+}
+
+export async function listLocalOrdersByLeadId(leadId: string) {
+  const store = await readStore();
+  return store.orders.filter((order) => String(order.lead_id || '') === String(leadId));
 }
 
 export async function listLocalOrdersByEmail(email: string) {
